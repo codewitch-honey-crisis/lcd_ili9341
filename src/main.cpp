@@ -73,14 +73,15 @@ using namespace gfx;
 //but less overhead for setting up / finishing transfers.
 #define PARALLEL_LINES 16
 
+// configure the spi bus. Must be done before the driver
 spi_master g_spi_host(nullptr,LCD_HOST,PIN_NUM_CLK,PIN_NUM_MISO,PIN_NUM_MOSI,GPIO_NUM_NC,GPIO_NUM_NC,PARALLEL_LINES*320*2+8,DMA_CHAN);
-// we gave this a huge buffer - it makes things faster but uses memory. it usually works fine at default
-// but you can change it for performance tuning. It's the final parameter:
-using lcd_type = ili9341<LCD_HOST,PIN_NUM_CS,PIN_NUM_DC,PIN_NUM_RST,PIN_NUM_BCKL,PARALLEL_LINES*320*2+8>;
 
-lcd_type lcd;
-
+// we use the default, modest buffer - it makes things slower but uses less memory. it usually works fine at default
+// but you can change it for performance tuning. It's the final parameter: Note that it shouldn't be any bigger than the DMA size
+using lcd_type = ili9341<LCD_HOST,PIN_NUM_CS,PIN_NUM_DC,PIN_NUM_RST,PIN_NUM_BCKL/*,PARALLEL_LINES*320*2+8*/>;
+// declaring this saves us typing - we can do lcd_color::white for example:
 using lcd_color = gfx::color<typename lcd_type::pixel_type>;
+lcd_type lcd;
 
 // demonstrates how to use the "bare metal" driver calls, bypassing GFX
 void raw_driver_batch_demo() {
@@ -165,7 +166,7 @@ void app_main(void)
     srect16 sr = (srect16)lcd.bounds().offset(0,bmp_size.height).crop(lcd.bounds());
     ssize16 tsiz = f.measure_text(sr.dimensions(),text);
     sr=sr.offset((sr.width()-tsiz.width)/2,0);
-    
+    // draw it
     draw::text(lcd,sr,text,f,lcd_color::antique_white);
     
     vTaskDelay(3000/portTICK_PERIOD_MS);
@@ -178,7 +179,10 @@ void app_main(void)
     }
     gfx_result gr=image::load(&fs,[](const image::region_type& region,point16 location,void* state) {
         lcd_type* plcd = (lcd_type*)state;
-        return gfx_result::success==plcd->frame_write(region.bounds(),region,location);
+        // we're not using it here, but we can do things like specify clipping here if we need it:
+        return gfx_result::success==draw::bitmap(*plcd,srect16((spoint16)location,(ssize16)region.dimensions()),region,region.bounds());
+        // alternatively we could have just done this, which doesn't support clipping:
+        //return gfx_result::success==plcd->frame_write(region.bounds(),region,location);
     },&lcd);
     if(gr!=gfx_result::success) {
         printf("image draw error %d\r\n",(int)gr);
