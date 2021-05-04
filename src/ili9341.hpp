@@ -1,5 +1,5 @@
 #pragma once
-#define CONFIG_LCD_OVERCLOCK
+#define HTCW_ILI9341_OVERCLOCK
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/spi_master.h"
@@ -202,7 +202,7 @@ namespace espidf {
                 .duty_cycle_pos=0,
                 .cs_ena_pretrans=0,
                 .cs_ena_posttrans=0,
-        #ifdef CONFIG_LCD_OVERCLOCK
+        #ifdef HTCW_ILI9341_OVERCLOCK
                 .clock_speed_hz=26*1000*1000,           //Clock out at 26 MHz
         #else
                 .clock_speed_hz=10*1000*1000,           //Clock out at 10 MHz
@@ -464,7 +464,7 @@ namespace espidf {
             return result::success;
         }
         
-        result write_pixel(uint16_t x,uint16_t y,uint16_t color) {
+        result pixel_write(uint16_t x,uint16_t y,uint16_t color) {
             result r = initialize();
             if(result::success!=r)
                 return r;
@@ -567,7 +567,7 @@ namespace espidf {
             return gfx::rect16(gfx::point16(0,0),dimensions());
         }
         gfx::gfx_result point(gfx::point16 location,pixel_type pixel) {
-            result r = write_pixel(location.x,location.y,pixel.value());
+            result r = pixel_write(location.x,location.y,pixel.value());
             if(result::success!=r)
                 return xlt_err(r);
             return gfx::gfx_result::success;
@@ -584,6 +584,7 @@ namespace espidf {
             return fill(rect,p.convert<pixel_type>());
         }
         gfx::gfx_result begin_batch(const gfx::rect16& rect) {
+            
             if(result::success!=batch_write_begin(rect.x1,rect.y1,rect.x2,rect.y2))
                 return gfx::gfx_result::device_error;
             return gfx::gfx_result::success;
@@ -593,7 +594,7 @@ namespace espidf {
                 return gfx::gfx_result::device_error;
             return gfx::gfx_result::success;
         }
-        gfx::gfx_result batch_write(pixel_type color) {
+        gfx::gfx_result write_batch(pixel_type color) {
             uint16_t p = color.value();
             result r = this->batch_write(&p,1);
             if(result::success!=r)
@@ -601,7 +602,7 @@ namespace espidf {
             return gfx::gfx_result::success;
         }
         template<typename Source>
-        gfx::gfx_result frame_write(const gfx::rect16& src_rect,const Source& src,gfx::point16 location) {
+        gfx::gfx_result write_frame(const gfx::rect16& src_rect,const Source& src,gfx::point16 location) {
             gfx::rect16 srcr = src_rect.normalize().crop(src.bounds());
             gfx::rect16 dstr(location,src_rect.dimensions());
             dstr=dstr.crop(bounds());

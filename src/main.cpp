@@ -1,11 +1,3 @@
-#define CONFIG_LCD_TYPE_AUTO
-#define CONFIG_LCD_OVERCLOCK
-/* SPI Master example
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
 extern "C" { void app_main(); }
 
 #include <stdio.h>
@@ -14,8 +6,6 @@ extern "C" { void app_main(); }
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
-#include "driver/spi_master.h"
-#include "driver/gpio.h"
 #include "spi_master.hpp"
 #include "esp_spiffs.h"
 #include "ili9341.hpp"
@@ -69,16 +59,34 @@ using namespace gfx;
 #define PIN_NUM_BCKL GPIO_NUM_19
 #endif
 
-//To speed up transfers, every SPI transfer sends as much data as possible. This define specifies how much. More means more memory use,
-//but less overhead for setting up / finishing transfers.
+// To speed up transfers, every SPI transfer sends as much data as possible. 
+// This define specifies how much. More means more memory use, but less 
+// overhead for setting up / finishing transfers.
 #define PARALLEL_LINES 16
 
 // configure the spi bus. Must be done before the driver
-spi_master g_spi_host(nullptr,LCD_HOST,PIN_NUM_CLK,PIN_NUM_MISO,PIN_NUM_MOSI,GPIO_NUM_NC,GPIO_NUM_NC,PARALLEL_LINES*320*2+8,DMA_CHAN);
+spi_master g_spi_host(nullptr,
+                    LCD_HOST,
+                    PIN_NUM_CLK,
+                    PIN_NUM_MISO,
+                    PIN_NUM_MOSI,
+                    GPIO_NUM_NC,
+                    GPIO_NUM_NC,
+                    // This is much bigger than we need:
+                    PARALLEL_LINES*320*2+8,
+                    DMA_CHAN);
 
-// we use the default, modest buffer - it makes things slower but uses less memory. it usually works fine at default
-// but you can change it for performance tuning. It's the final parameter: Note that it shouldn't be any bigger than the DMA size
-using lcd_type = ili9341<LCD_HOST,PIN_NUM_CS,PIN_NUM_DC,PIN_NUM_RST,PIN_NUM_BCKL/*,PARALLEL_LINES*320*2+8*/>;
+// we use the default, modest buffer - it makes things slower but uses less
+// memory. it usually works fine at default but you can change it for performance 
+// tuning. It's the final parameter: Note that it shouldn't be any bigger than 
+// the DMA size
+using lcd_type = ili9341<LCD_HOST,
+                        PIN_NUM_CS,
+                        PIN_NUM_DC,
+                        PIN_NUM_RST,
+                        PIN_NUM_BCKL
+                        /*,PARALLEL_LINES*320*2+8*/>;
+
 // declaring this saves us typing - we can do lcd_color::white for example:
 using lcd_color = gfx::color<typename lcd_type::pixel_type>;
 lcd_type lcd;
@@ -120,6 +128,9 @@ void app_main(void)
     // clear the display
     lcd.clear(lcd.bounds());
     
+    // we actually don't need more than 3 bits here for the colors 
+    // we are using. Storing it in 3 bits saves memory but the 
+    // color depth isn't realistic for most things
     using bmp_type = bitmap<rgb_pixel<3> /*typename lcd_type::pixel_type*/>;
     using bmp_color = color<typename bmp_type::pixel_type>;
     const size16 bmp_size(64,64);
@@ -140,7 +151,11 @@ void app_main(void)
     draw::filled_ellipse(bmp,bounds,bmp_color::yellow);
     
     // draw the left eye
-    srect16 eye_bounds_left(spoint16(bounds.width()/5,bounds.height()/5),ssize16(bounds.width()/5,bounds.height()/3));
+    srect16 eye_bounds_left(spoint16(bounds.width()/5,
+                            bounds.height()/5),
+                            ssize16(bounds.width()/5,
+                            bounds.height()/3));
+    
     draw::filled_ellipse(bmp,eye_bounds_left,bmp_color::black);
     
     // draw the right eye
@@ -152,13 +167,19 @@ void app_main(void)
     draw::filled_ellipse(bmp,eye_bounds_right,bmp_color::black);
     
     // draw the mouth
-    srect16 mouth_bounds=bounds.inflate(-bounds.width()/7,-bounds.height()/8).normalize();
+    srect16 mouth_bounds=bounds.inflate(-bounds.width()/7,
+                                    -bounds.height()/8).normalize();
     // we need to clip part of the circle we'll be drawing
-    srect16 mouth_clip(mouth_bounds.x1,mouth_bounds.y1+mouth_bounds.height()/(float)1.6,mouth_bounds.x2,mouth_bounds.y2);
+    srect16 mouth_clip(mouth_bounds.x1,
+                    mouth_bounds.y1+mouth_bounds.height()/(float)1.6,
+                    mouth_bounds.x2,
+                    mouth_bounds.y2);
     draw::ellipse(bmp,mouth_bounds,bmp_color::black,&mouth_clip);
 
     // draw it centered horizontally 
-    draw::bitmap(lcd,bounds.offset((lcd_type::width-bmp_size.width)/2,0),bmp,ubounds);
+    draw::bitmap(lcd,bounds.offset((lcd_type::width-bmp_size.width)/2,0),
+                                bmp,
+                                ubounds);
     
     const font& f = Bm437_ATI_8x16_FON;
     const char* text = "Have a nice day!";
@@ -177,17 +198,25 @@ void app_main(void)
         printf("image file not found\r\n");
         abort();
     }
-    gfx_result gr=image::load(&fs,[](const image::region_type& region,point16 location,void* state) {
+    gfx_result gr=jpeg_image::load(&fs,[](const jpeg_image::region_type& region,
+                                    point16 location,
+                                    void* state) {
         lcd_type* plcd = (lcd_type*)state;
-        // we're not using it here, but we can do things like specify clipping here if we need it:
-        return gfx_result::success==draw::bitmap(*plcd,srect16((spoint16)location,(ssize16)region.dimensions()),region,region.bounds());
-        // alternatively we could have just done this, which doesn't support clipping:
-        //return gfx_result::success==plcd->frame_write(region.bounds(),region,location);
+        // we're not using it here, but we can do things like specify 
+        // clipping here if we need it:
+        return gfx_result::success==
+            draw::bitmap(*plcd,
+                        srect16((spoint16)location,
+                        (ssize16)region.dimensions()),
+                        region,region.bounds());
+        // alternatively we could have just done this, 
+        // which doesn't support clipping:
+        // return gfx_result::success==plcd->write_frame(region.bounds(),
+        //                                             region,
+        //                                             location);
     },&lcd);
     if(gr!=gfx_result::success) {
         printf("image draw error %d\r\n",(int)gr);
     }
-    vTaskDelay(portMAX_DELAY);
-    
-  
+    vTaskDelay(portMAX_DELAY); 
 }
