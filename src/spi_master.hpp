@@ -42,7 +42,7 @@ namespace espidf {
             config.mosi_io_num=mosi;
             config.quadwp_io_num=d2;
             config.quadhd_io_num=d3;
-            config.max_transfer_sz=max_transfer_size;
+            config.max_transfer_sz=m_dma_transfer_size;
             config.flags=flags;
             config.intr_flags = intr_flags;
             esp_err_t res = spi_bus_initialize(host_id, &config, dma_chan);
