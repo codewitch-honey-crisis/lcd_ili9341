@@ -11,7 +11,14 @@
 #include "gfx_pixel.hpp"
 
 namespace espidf {
-    template<spi_host_device_t HostId,gpio_num_t PinCS,gpio_num_t PinDC,gpio_num_t PinRst,gpio_num_t PinBacklight,size_t BufferSize=64>
+    template<spi_host_device_t HostId,
+            gpio_num_t PinCS,
+            gpio_num_t PinDC,
+            gpio_num_t PinRst,
+            gpio_num_t PinBacklight,
+            size_t BufferSize=64,
+            size_t MaxTransactions=7,
+            TickType_t Timeout=5000/portTICK_PERIOD_MS>
     struct ili9341 {
         constexpr static const spi_host_device_t host_id = HostId;
         constexpr static const gpio_num_t pin_cs = PinCS;
@@ -22,11 +29,15 @@ namespace espidf {
         constexpr static const size_t buffer_size = ((BufferSize<4?4:BufferSize)/2)*2;
         constexpr static const uint16_t width = 320;
         constexpr static const uint16_t height = 240;
+        constexpr static const size_t max_transactions = MaxTransactions;
+        constexpr static const TickType_t timeout = Timeout;
         enum struct result {
             success = 0,
             invalid_argument=1,
             out_of_memory=2,
-            io_error=3
+            io_error=3,
+            timeout=4,
+            io_pending=5
         };
     private:
         spi_transaction_t m_trans[6] = {
@@ -184,6 +195,7 @@ namespace espidf {
         uint8_t m_buffer[buffer_size];
         bool m_initialized;
         size_t m_batch_left;
+        size_t m_queued_transactions;
         spi_device m_spi;
         struct init_cmd {
             uint8_t cmd;
@@ -219,9 +231,181 @@ namespace espidf {
             };
             return devcfg;
         } 
-        
+        result send_transaction(spi_transaction_t* trans,bool queued,bool skip_batch_commit=false) {
+            result r = initialize();
+            if(result::success!=r)
+                return r;
+            spi_result rr;
+            if(!queued && 0!=m_queued_transactions) {
+                if(!skip_batch_commit && 0!=m_batch_left) {
+                    spi_device::make_write(&m_trans[5],m_buffer,m_batch_left*2);
+                    if(m_queued_transactions==max_transactions) {
+                        spi_transaction_t *rtrans;
+                        rr=m_spi.get_next_queued_result(&rtrans);
+                        if(spi_result::success!=rr)
+                            goto send_transaction_error;
+                        --m_queued_transactions;
+                    }
+                    rr=m_spi.queue_transaction(&m_trans[5],timeout);
+                    if(spi_result::success!=rr)
+                        goto send_transaction_error;
+                    m_batch_left=0;
+                    
+                    if(0!=m_queued_transactions)
+                        r= queued_wait();
+                } else {
+                    r=queued_wait();
+                }
+                if(result::success!=r)
+                    return r;
+                
+            }
+            
+            if(m_queued_transactions==max_transactions) {
+                spi_transaction_t*ptrans;
+                rr=m_spi.get_next_queued_result(&ptrans);
+                if(spi_result::success!=rr)
+                    goto send_transaction_error;
+                --m_queued_transactions;
+            }
+            if(queued) {
+                rr = m_spi.queue_transaction(trans,timeout);
+            } else {
+                
+                rr = m_spi.transaction(trans,true);
+            }
+send_transaction_error:
+            if(spi_result::success!=rr) {
+                switch(rr) {
+                    case spi_result::timeout:
+                        return result::timeout;
+                    case spi_result::out_of_memory:
+                        return result::out_of_memory;
+                    case spi_result::previous_transactions_pending:
+                        return result::io_pending;
+                    default:
+                        return result::io_error;
+                }
+            }
+            if(queued)
+                ++m_queued_transactions;
+            return result::success;
+        }
+        result batch_write_commit_impl(bool queued) {
+            if(m_batch_left==0)  {
+                if(0!=m_queued_transactions) {
+                    result r = queued_wait();
+                    if(result::success!=r)
+                        return r;
+                }
+                return result::success;
+            }
+            // for some reason this trans struct seems to get corrupted
+            // so we just rewrite the whole thing
+            spi_device::make_write(&m_trans[5],m_buffer,m_batch_left*2);
+            //printf("batch write commit sending %d bytes\r\n",(int)m_batch_left*2);
+            /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
+                return result::io_error;
+            }*/
+            /*
+            if(spi_result::success!=m_spi.write(m_buffer,m_batch_left*2,(void*)1)) {
+                return result::io_error;
+            }
+            */
+           
+            result r = send_transaction(&m_trans[5],queued,true);
+            if(result::success!=r)
+                return r;
+            m_batch_left=0;
+            if(0!=m_queued_transactions)
+                return queued_wait();
+            return result::success;
+        }
+        result batch_write_begin_impl(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,bool queued) {
+             // normalize values
+            uint16_t tmp;
+            if(x1>x2) {
+                tmp=x1;
+                x1=x2;
+                x2=tmp;
+            }
+            if(y1>y2) {
+                tmp=y1;
+                y1=y2;
+                y2=tmp;
+            }
+            
+            //Column Address Set
+            result r=send_transaction(&m_trans[0],queued);
+            if(result::success!=r)
+                return r;
+            m_trans[1].tx_data[0]=x1>>8;             //Start Col High
+            m_trans[1].tx_data[1]=x1&0xFF;           //Start Col Low
+            m_trans[1].tx_data[2]=x2>>8;             //End Col High
+            m_trans[1].tx_data[3]=x2&0xff;           //End Col Low
+            r=send_transaction(&m_trans[1],queued,true);
+            if(result::success!=r)
+                return r;
+            //Page address set
+            r=send_transaction(&m_trans[2],queued,true);
+            if(result::success!=r)
+                return r;
+            m_trans[3].tx_data[0]=y1>>8;        //Start page high
+            m_trans[3].tx_data[1]=y1&0xff;      //start page low
+            m_trans[3].tx_data[2]=y2>>8;        //end page high
+            m_trans[3].tx_data[3]=y2&0xff;      //end page low
+            r=send_transaction(&m_trans[3],queued,true);
+            if(result::success!=r)
+                return r;
+            // memory write
+            r=send_transaction(&m_trans[4],queued,true);
+            if(result::success!=r)
+                return r;
+            //spi_device::make_write(&m_trans[5],m_buffer,buffer_size,(void*)1);
+            return result::success;
+        }       
+        result batch_write_impl(uint16_t* pixels,size_t count,bool queued) {
+            if(!m_initialized)
+                return result::io_error;
+            result r;
+            size_t index = m_batch_left;
+            if(index==buffer_size/2) {
+                //printf("batch write sending %d bytes\r\n",(int)m_batch_left*2);
+                /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
+                    return result::io_error;
+                }*/
+                spi_device::make_write(&m_trans[5],m_buffer,buffer_size,(void*)1);
+                r=send_transaction(&m_trans[5],queued,true);
+                if(result::success!=r) {
+                    return r;
+                }
+                m_batch_left=0;
+                index = 0;
+            }
+            uint16_t* p=((uint16_t*)m_buffer)+index;
+            while(0<count) {    
+                *p=*pixels;
+                --count;
+                ++m_batch_left;
+                ++pixels;
+                ++p;
+                if(m_batch_left==(buffer_size/2)) {
+                    //printf("batch write sending %d bytes\r\n",(int)m_batch_left*2);
+                    /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
+                        return result::io_error;
+                    }*/
+                    spi_device::make_write(&m_trans[5],m_buffer,buffer_size,(void*)1);
+                    r=send_transaction(&m_trans[5],queued,true);
+                    if(result::success!=r)
+                        return r;
+                    p=(uint16_t*)m_buffer;
+                    m_batch_left=0;
+                }
+            }
+            return result::success;
+        }
     public:
-        ili9341(result* out_result = nullptr) : m_initialized(false), m_batch_left(0), m_spi(host_id,get_device_config())  {
+        ili9341(result* out_result = nullptr) : m_initialized(false), m_batch_left(0),m_queued_transactions(0), m_spi(host_id,get_device_config())  {
             if(!m_spi.initialized()) {
                 if(nullptr!=out_result) {
                     *out_result=result::io_error;
@@ -273,12 +457,6 @@ namespace espidf {
             return result::success;
         }
         result queue_frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint8_t* bmp_data) {
-            result r = initialize();
-            if(result::success!=r)
-                return r;
-            r=batch_write_commit();
-            if(result::success!=r)
-                return r;
             // normalize values
             uint16_t tmp;
             if(x1>x2) {
@@ -294,46 +472,32 @@ namespace espidf {
             if(x1>=width || y1>=height)
                 return result::success;
             
-            //Column Address Set
-            if(spi_result::success!=m_spi.queue_transaction(&m_trans[0]))
-                return result::io_error;
-            m_trans[1].tx_data[0]=x1>>8;             //Start Col High
-            m_trans[1].tx_data[1]=x1&0xFF;           //Start Col Low
-            m_trans[1].tx_data[2]=x2>>8;             //End Col High
-            m_trans[1].tx_data[3]=x2&0xff;           //End Col Low
-            if(spi_result::success!=m_spi.queue_transaction(&m_trans[1]))
-                return result::io_error;
-            //Page address set
-            if(spi_result::success!=m_spi.queue_transaction(&m_trans[2]))
-                return result::io_error;
-            m_trans[3].tx_data[0]=y1>>8;        //Start page high
-            m_trans[3].tx_data[1]=y1&0xff;      //start page low
-            m_trans[3].tx_data[2]=y2>>8;        //end page high
-            m_trans[3].tx_data[3]=y2&0xff;      //end page low
-            if(spi_result::success!=m_spi.queue_transaction(&m_trans[3]))
-                return result::io_error;
-            //memory write
-            if(spi_result::success!=m_spi.queue_transaction(&m_trans[4]))
-                return result::io_error;
-            m_trans[5].flags=0;
-            m_trans[5].tx_buffer=bmp_data;
-            m_trans[5].length=(x2-x1+1)*(y2-y1+1)*16;
-            if(spi_result::success!=m_spi.queue_transaction(&m_trans[5]))
-                return result::io_error;
-            
+            // flush any pending batches or transactions if necessary:
+            result r=batch_write_commit_impl(true);
+            if(result::success!=r) {
+                return r;
+            }
+            r=batch_write_begin_impl(x1,y1,x2,y2,true);
+            if(result::success!=r)
+                return r;
+            // we need to modify this transaction to send 
+            // our bitmap data
+            spi_device::make_write(&m_trans[5],bmp_data,(x2-x1+1)*(y2-y1+1)*2);
+            r=send_transaction(&m_trans[5],true);
             
             //When we are here, the SPI driver is busy (in the background) getting the transactions sent. That happens
             //mostly using DMA, so the CPU doesn't have much to do here. We're not going to wait for the transaction to
-            //finish because we may as well spend the time calculating the next line. When that is done, we can call
-            //send_line_finish, which will wait for the transfers to be done and check their status.
-            return result::success;
+            //finish because we may as well spend the time calculating the draw. When that is done, we can call
+            //queued_wait(), which will wait for the transfers to be done and check their status.
+            return r;
+            
         }
 
-        result wait_queued_frame_write()
+        result queued_wait()
         {
             spi_transaction_t *rtrans;
-            //Wait for all 6 transactions to be done and get back the results.
-            for (int x=0; x<6; x++) {
+            //Wait for all of the transactions to be done and get back the results.
+            for (;m_queued_transactions>0; --m_queued_transactions) {
                 if(spi_result::success!=m_spi.get_next_queued_result(&rtrans))
                     return result::io_error;
                 //We could inspect rtrans now if we received any info back. The LCD is treated as write-only, though.
@@ -341,101 +505,22 @@ namespace espidf {
             return result::success;
         }
         result batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
-            result r = initialize();
-            if(result::success!=r)
-                return r;
-            r=batch_write_commit();
-            if(result::success!=r)
-                return r;
-             // normalize values
-            uint16_t tmp;
-            if(x1>x2) {
-                tmp=x1;
-                x1=x2;
-                x2=tmp;
-            }
-            if(y1>y2) {
-                tmp=y1;
-                y1=y2;
-                y2=tmp;
-            }
-            
-            //Column Address Set
-            if(spi_result::success!=m_spi.transaction(&m_trans[0],true))
-                return result::io_error;
-            m_trans[1].tx_data[0]=x1>>8;             //Start Col High
-            m_trans[1].tx_data[1]=x1&0xFF;           //Start Col Low
-            m_trans[1].tx_data[2]=x2>>8;             //End Col High
-            m_trans[1].tx_data[3]=x2&0xff;           //End Col Low
-            if(spi_result::success!=m_spi.transaction(&m_trans[1],true))
-                return result::io_error;
-            //Page address set
-            if(spi_result::success!=m_spi.transaction(&m_trans[2],true))
-                return result::io_error;
-            m_trans[3].tx_data[0]=y1>>8;        //Start page high
-            m_trans[3].tx_data[1]=y1&0xff;      //start page low
-            m_trans[3].tx_data[2]=y2>>8;        //end page high
-            m_trans[3].tx_data[3]=y2&0xff;      //end page low
-            if(spi_result::success!=m_spi.transaction(&m_trans[3],true))
-                return result::io_error;
-             //memory write
-            if(spi_result::success!=m_spi.transaction(&m_trans[4],true))
-                return result::io_error;
-            spi_device::make_write(&m_trans[5],m_buffer,buffer_size,(void*)1);
-            return result::success;
+            return batch_write_begin_impl(x1,y1,x2,y2,false);
+        }
+        result queued_batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
+            return batch_write_begin_impl(x1,y1,x2,y2,true);
         }
         result batch_write(uint16_t* pixels,size_t count) {
-            if(!m_initialized)
-                return result::io_error;
-            size_t index = m_batch_left;
-            if(index==buffer_size/2) {
-                //printf("batch write sending %d bytes\r\n",(int)m_batch_left*2);
-                /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
-                    return result::io_error;
-                }*/
-                if(spi_result::success!=m_spi.write(m_buffer,buffer_size,(void*)1)) {
-                    return result::io_error;
-                }
-                m_batch_left=0;
-                index = 0;
-            }
-            uint16_t* p=((uint16_t*)m_buffer)+index;
-            while(0<count) {    
-                *p=*pixels;
-                --count;
-                ++m_batch_left;
-                ++pixels;
-                ++p;
-                if(m_batch_left==(buffer_size/2)) {
-                    //printf("batch write sending %d bytes\r\n",(int)m_batch_left*2);
-                    /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
-                        return result::io_error;
-                    }*/
-                    if(spi_result::success!=m_spi.write(m_buffer,buffer_size,(void*)1)) {
-                        return result::io_error;
-                    }
-                    p=(uint16_t*)m_buffer;
-                    m_batch_left=0;
-                }
-            }
-            return result::success;
+            return batch_write_impl(pixels,count,false);
+        }
+        result queued_batch_write(uint16_t* pixels,size_t count) {
+            return batch_write_impl(pixels,count,true);
         }
         result batch_write_commit() {
-            if(m_batch_left==0) 
-                return result::success;
-            // for some reason this trans struct seems to get corrupted
-            // so we just rewrite the whole thing
-            //spi_device::make_write(&m_trans[5],m_buffer,m_batch_left*2);
-            //printf("batch write commit sending %d bytes\r\n",(int)m_batch_left*2);
-            /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
-                return result::io_error;
-            }*/
-            if(spi_result::success!=m_spi.write(m_buffer,m_batch_left*2,(void*)1)) {
-                return result::io_error;
-            }
-        
-            m_batch_left=0;
-            return result::success;
+            return batch_write_commit_impl(false);
+        }
+        result queued_batch_write_commit() {
+            return batch_write_commit_impl(true);
         }
         result frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,const uint8_t* bmp_data) {
             // normalize values
@@ -465,41 +550,39 @@ namespace espidf {
         }
         
         result pixel_write(uint16_t x,uint16_t y,uint16_t color) {
-            result r = initialize();
-            if(result::success!=r)
-                return r;
-            r=batch_write_commit();
+            result r=batch_write_commit();
             if(result::success!=r)
                 return r;
             // check values
             if(x>=width || y>=height)
                 return result::success;
-            static const bool use_polling=true;
             //Column Address Set
-            if(spi_result::success!=m_spi.transaction(&m_trans[0],use_polling))
-                return result::io_error;
+            r=send_transaction(&m_trans[0],false);
+            if(result::success!=r)
+                return r;
             taskYIELD();
             m_trans[1].tx_data[2]=m_trans[1].tx_data[0]=x>>8;             //Start Col High
             m_trans[1].tx_data[3]=m_trans[1].tx_data[1]=x&0xFF;           //Start Col Low
-            if(spi_result::success!=m_spi.transaction(&m_trans[1],use_polling))
-                return result::io_error;
+            r=send_transaction(&m_trans[1],false);
+            if(result::success!=r)
+                return r;
             //Page address set
-            if(spi_result::success!=m_spi.transaction(&m_trans[2],use_polling))
-                return result::io_error;
+            r=send_transaction(&m_trans[2],false);
+            if(result::success!=r)
+                return r;
             m_trans[3].tx_data[2]=m_trans[3].tx_data[0]=y>>8;        //Start page high
             m_trans[3].tx_data[3]=m_trans[3].tx_data[1]=y&0xff;      //start page low
-            if(spi_result::success!=m_spi.transaction(&m_trans[3],use_polling))
-                return result::io_error;
+            r=send_transaction(&m_trans[3],false);
+            if(result::success!=r)
+                return r;
             //memory write
-            if(spi_result::success!=m_spi.transaction(&m_trans[4],use_polling))
-                return result::io_error;
+            r=send_transaction(&m_trans[4],false);
+            if(result::success!=r)
+                return r;
             spi_device::make_write(&m_trans[5],(uint8_t*)&color,2,(void*)1);
-            if(spi_result::success!=m_spi.transaction(&m_trans[5],use_polling))
-                return result::io_error;
-            
-            //if(spi_result::success!=m_spi.write((uint8_t*)&color,2,(void*)1))
-            //    return result::io_error;
-            
+            r=send_transaction(&m_trans[5],false);
+            if(result::success!=r)
+                return r;
             return result::success;
         }
       
@@ -664,8 +747,8 @@ namespace espidf {
             return gfx::gfx_result::success;
         }
     };
-    template<spi_host_device_t HostId,gpio_num_t PinCS,gpio_num_t PinDC,gpio_num_t PinRst,gpio_num_t PinBacklight,size_t BufferSize>
-    const typename ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize>::init_cmd ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize>::s_init_cmds[]={
+    template<spi_host_device_t HostId,gpio_num_t PinCS,gpio_num_t PinDC,gpio_num_t PinRst,gpio_num_t PinBacklight,size_t BufferSize,size_t MaxTransactions,TickType_t Timeout>
+    const typename ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize,MaxTransactions,Timeout>::init_cmd ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize,MaxTransactions,Timeout>::s_init_cmds[]={
             /* Power contorl B, power control = 0, DC_ENA = 1 */
             {0xCF, {0x00, 0x83, 0X30}, 3},
             /* Power on sequence control,

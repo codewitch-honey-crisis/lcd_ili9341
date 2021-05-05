@@ -94,6 +94,7 @@ lcd_type lcd;
 // demonstrates how to use the "bare metal" driver calls, bypassing GFX
 void raw_driver_batch_demo() {
     lcd.batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
+    
     for(uint16_t y=0;y<lcd_type::height;++y) {
         for(uint16_t x=0;x<lcd_type::width;++x) {
             // alternate white and black
@@ -101,11 +102,28 @@ void raw_driver_batch_demo() {
             if(lcd_type::result::success!=lcd.batch_write(&v,1)) {
                 printf("write pixel failed\r\n");
                 y=lcd_type::height;
-                break;;
+                return;
+            }
+        }
+    }
+            
+    lcd.batch_write_commit();
+    vTaskDelay(3000/portTICK_PERIOD_MS);
+    lcd.queued_batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
+    for(uint16_t y=0;y<lcd_type::height;++y) {
+        for(uint16_t x=0;x<lcd_type::width;++x) {
+            uint16_t v=0xF800*((x+y)%2);
+            v+=v=0x001F*(1-((x+y)%2));
+            if(lcd_type::result::success!=lcd.queued_batch_write(&v,1)) {
+                printf("write pixel failed\r\n");
+                y=lcd_type::height;
+                return;
             }           
         }
     }
-    lcd.batch_write_commit();
+    lcd.queued_batch_write_commit();
+    vTaskDelay(3000/portTICK_PERIOD_MS);
+    
 }
 void app_main(void)
 {
@@ -124,7 +142,7 @@ void app_main(void)
     ret=esp_vfs_spiffs_register(&conf);
     ESP_ERROR_CHECK(ret);   
     raw_driver_batch_demo();
-
+    
     // clear the display
     lcd.clear(lcd.bounds());
     
