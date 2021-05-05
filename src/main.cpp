@@ -65,14 +65,13 @@ using namespace gfx;
 #define PARALLEL_LINES 16
 
 // configure the spi bus. Must be done before the driver
-spi_master g_spi_host(nullptr,
+spi_master spi_host(nullptr,
                     LCD_HOST,
                     PIN_NUM_CLK,
                     PIN_NUM_MISO,
                     PIN_NUM_MOSI,
                     GPIO_NUM_NC,
                     GPIO_NUM_NC,
-                    // This is much bigger than we need:
                     PARALLEL_LINES*320*2+8,
                     DMA_CHAN);
 
@@ -84,8 +83,7 @@ using lcd_type = ili9341<LCD_HOST,
                         PIN_NUM_CS,
                         PIN_NUM_DC,
                         PIN_NUM_RST,
-                        PIN_NUM_BCKL
-                        /*,PARALLEL_LINES*320*2+8*/>;
+                        PIN_NUM_BCKL>;
 
 // declaring this saves us typing - we can do lcd_color::white for example:
 using lcd_color = gfx::color<typename lcd_type::pixel_type>;
@@ -93,12 +91,24 @@ lcd_type lcd;
 
 // demonstrates how to use the "bare metal" driver calls, bypassing GFX
 void raw_driver_batch_demo() {
-    lcd.batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
-    
-    for(uint16_t y=0;y<lcd_type::height;++y) {
+    // not batched. slow and floods the bus, tickling
+    // the task watchdog. You'll see it in the serial out
+    /*for(uint16_t y=0;y<lcd_type::height;++y) {
         for(uint16_t x=0;x<lcd_type::width;++x) {
             // alternate white and black
             uint16_t v=0xFFFF*((x+y)%2);
+            if(lcd_type::result::success!=lcd.pixel_write(x,y,v)) {
+                printf("write pixel failed\r\n");
+                y=lcd_type::height;
+                return;
+            }
+        }
+    }*/
+    // batched, much faster and more reliable
+    lcd.batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
+    for(uint16_t y=0;y<lcd_type::height;++y) {
+        for(uint16_t x=0;x<lcd_type::width;++x) {
+            uint16_t v=0xA01F*((x+y)%2);
             if(lcd_type::result::success!=lcd.batch_write(&v,1)) {
                 printf("write pixel failed\r\n");
                 y=lcd_type::height;
@@ -106,12 +116,22 @@ void raw_driver_batch_demo() {
             }
         }
     }
-            
     lcd.batch_write_commit();
-    vTaskDelay(3000/portTICK_PERIOD_MS);
+    //vTaskDelay(3000/portTICK_PERIOD_MS);
+    // queued/asynchronous batching - SLOWER than the above
     lcd.queued_batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
     for(uint16_t y=0;y<lcd_type::height;++y) {
         for(uint16_t x=0;x<lcd_type::width;++x) {
+            // here's the reason this is no good:
+            // we're simply not doing enough work
+            // below to make it worthwhile. The
+            // only way queued operations are
+            // worth it is if your work between
+            // driver calls is more than the 
+            // additional overhead incurred by
+            // queuing. Since all we're doing
+            // below is some very basic math,
+            // this doesn't pay for itself
             uint16_t v=0xF800*((x+y)%2);
             v+=v=0x001F*(1-((x+y)%2));
             if(lcd_type::result::success!=lcd.queued_batch_write(&v,1)) {
@@ -122,13 +142,13 @@ void raw_driver_batch_demo() {
         }
     }
     lcd.queued_batch_write_commit();
-    vTaskDelay(3000/portTICK_PERIOD_MS);
+    //vTaskDelay(3000/portTICK_PERIOD_MS);
     
 }
 void app_main(void)
 {
     // check to make sure SPI was initialized successfully
-    if(!g_spi_host.initialized()) {
+    if(!spi_host.initialized()) {
         printf("SPI host initialization error.\r\n");
         abort();
     }
@@ -208,31 +228,30 @@ void app_main(void)
     // draw it
     draw::text(lcd,sr,text,f,lcd_color::antique_white);
     
-    vTaskDelay(3000/portTICK_PERIOD_MS);
-
+    //vTaskDelay(3000/portTICK_PERIOD_MS);
+    free(bmp_buffer);
     // load an image
     io::file_stream fs("/spiffs/image3.jpg");
     if(!fs.caps().read) {
         printf("image file not found\r\n");
         abort();
     }
+   
     gfx_result gr=jpeg_image::load(&fs,[](const jpeg_image::region_type& region,
                                     point16 location,
                                     void* state) {
-        lcd_type* plcd = (lcd_type*)state;
         // we're not using it here, but we can do things like specify 
-        // clipping here if we need it:
+        // clipping or flipping here if we need it:
+        
         return gfx_result::success==
-            draw::bitmap(*plcd,
+            draw::bitmap(lcd,
                         srect16((spoint16)location,
-                        (ssize16)region.dimensions()),
-                        region,region.bounds());
-        // alternatively we could have just done this, 
-        // which doesn't support clipping:
-        // return gfx_result::success==plcd->write_frame(region.bounds(),
-        //                                             region,
-        //                                             location);
-    },&lcd);
+                            (ssize16)region.dimensions()),
+                        region,
+                        region.bounds());
+        
+        
+    },nullptr);
     if(gr!=gfx_result::success) {
         printf("image draw error %d\r\n",(int)gr);
     }
