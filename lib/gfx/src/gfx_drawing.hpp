@@ -50,10 +50,10 @@ namespace gfx {
                         uint16_t ssx=x2;
                         uint16_t ssy=y2;
                         if(flipX) {
-                            ssx= srcr.x2-x2-dstr.x1;
+                            ssx= srcr.x2-x2;
                         }
                         if(flipY) {
-                            ssy=srcr.y2-y2-dstr.y1;
+                            ssy=srcr.y2-y2;
                         }
                         gfx_result r = source.point(point16(ssx,ssy),&px);
                         if(gfx_result::success!=r)
@@ -92,10 +92,10 @@ namespace gfx {
                         uint16_t ssx=x2+srcr.x1;
                         uint16_t ssy=y2+srcr.y1;
                         if(flipX) {
-                            ssx= srcr.x2-x2-dstr.x1;
+                            ssx= srcr.x2-x2;
                         }
                         if(flipY) {
-                            ssy=srcr.y2-y2-dstr.y1;
+                            ssy=srcr.y2-y2;
                         }
                         r = source.point(point16(ssx,ssy),&px);
                         if(gfx_result::success!=r)

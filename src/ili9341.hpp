@@ -29,7 +29,7 @@ namespace espidf {
         constexpr static const size_t buffer_size = ((BufferSize<4?4:BufferSize)/2)*2;
         constexpr static const uint16_t width = 320;
         constexpr static const uint16_t height = 240;
-        constexpr static const size_t max_transactions = MaxTransactions;
+        constexpr static const size_t max_transactions = (0==MaxTransactions)?1:MaxTransactions;
         constexpr static const TickType_t timeout = Timeout;
         enum struct result {
             success = 0,
@@ -293,11 +293,6 @@ send_transaction_error:
         }
         result batch_write_commit_impl(bool queued) {
             if(m_batch_left==0)  {
-                if(0!=m_queued_transactions) {
-                    result r = queued_wait();
-                    if(result::success!=r)
-                        return r;
-                }
                 return result::success;
             }
             // for some reason this trans struct seems to get corrupted
@@ -317,8 +312,6 @@ send_transaction_error:
             if(result::success!=r)
                 return r;
             m_batch_left=0;
-            if(0!=m_queued_transactions)
-                return queued_wait();
             return result::success;
         }
         result batch_write_begin_impl(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,bool queued) {
@@ -456,7 +449,7 @@ send_transaction_error:
             }
             return result::success;
         }
-        result queue_frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint8_t* bmp_data) {
+        result queue_frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint8_t* bmp_data,bool precommit=false) {
             // normalize values
             uint16_t tmp;
             if(x1>x2) {
@@ -471,11 +464,13 @@ send_transaction_error:
             }
             if(x1>=width || y1>=height)
                 return result::success;
-            
-            // flush any pending batches or transactions if necessary:
-            result r=batch_write_commit_impl(true);
-            if(result::success!=r) {
-                return r;
+            result r;
+            if(precommit) {
+                // flush any pending batches or transactions if necessary:
+                r=batch_write_commit_impl(true);
+                if(result::success!=r) {
+                    return r;
+                }
             }
             r=batch_write_begin_impl(x1,y1,x2,y2,true);
             if(result::success!=r)
@@ -488,7 +483,8 @@ send_transaction_error:
             //When we are here, the SPI driver is busy (in the background) getting the transactions sent. That happens
             //mostly using DMA, so the CPU doesn't have much to do here. We're not going to wait for the transaction to
             //finish because we may as well spend the time calculating the draw. When that is done, we can call
-            //queued_wait(), which will wait for the transfers to be done and check their status.
+            //queued_wait(), which will wait for the transfers to be don.
+            // otherwise, the transactions will be queued as the old ones finish
             return r;
             
         }
