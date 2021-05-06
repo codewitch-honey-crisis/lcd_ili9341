@@ -20,9 +20,9 @@ uint16_t **pixels;
 static inline uint16_t get_bgnd_pixel(int x, int y)
 {
     //Image has an 8x8 pixel margin, so we can also resolve e.g. [-3, 243]
-    x+=8;
-    y+=8;
-    return pixels[y][x];
+    const uint16_t wpx = pixels[y+8][x+8];
+    return wpx;
+    
 }
 #elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32C3
 //esp32s2/c3 doesn't have enough memory to hold the decoded image, calculate instead
