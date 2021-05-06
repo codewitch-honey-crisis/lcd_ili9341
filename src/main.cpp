@@ -177,6 +177,9 @@ void app_main(void)
     rr=pretty_effect_init();
     if(gfx_result::success!=rr) {
         printf("Error loading demo: %d\r\n",(int)rr);
+        vTaskDelay(portMAX_DELAY);
+    } else {
+        display_pretty_colors();
     }
-    display_pretty_colors();
+
 }
