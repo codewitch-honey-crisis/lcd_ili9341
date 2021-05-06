@@ -101,12 +101,16 @@ gfx::gfx_result decode_image(uint16_t ***pixels)
         for (pt.y = r.y1; pt.y <= r.y2; ++pt.y) {
             for (pt.x = r.x1; pt.x <= r.x2; ++pt.x) {
                 //We need to convert the 3 bytes in `in` to a rgb565 value.
+                // we could use pixel<>.convert<> and it's as efficient
+                // but it's actually more lines of code because we have to
+                // convert to and from raw values
+                // so we may as well just keep it raw
                 uint16_t v = 0;
                 v |= ((in[0] >> 3) << 11);
                 v |= ((in[1] >> 2) << 5);
                 v |= ((in[2] >> 3) << 0);
                 //The LCD wants the 16-bit value in big-endian, so swap bytes
-                v = (v >> 8) | (v << 8);
+                v=gfx::helpers::order_guard(v);
                 out[pt.y][pt.x] = v;
                 in+=3;
             }
