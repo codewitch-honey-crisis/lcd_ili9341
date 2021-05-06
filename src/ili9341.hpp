@@ -98,11 +98,28 @@ namespace espidf {
             };
             return devcfg;
         } 
+        static result xlt_err(spi_result rr) {
+            
+            if(spi_result::success!=rr) {
+                switch(rr) {
+                    case spi_result::timeout:
+                        return result::timeout;
+                    case spi_result::out_of_memory:
+                        return result::out_of_memory;
+                    case spi_result::previous_transactions_pending:
+                        return result::io_pending;
+                    default:
+                        return result::io_error;
+                }
+            }
+            return result::success;
+        }
         result send_transaction(spi_transaction_t* trans,bool queued,bool skip_batch_commit=false) {
             result r = initialize();
             if(result::success!=r)
                 return r;
             spi_result rr;
+            spi_transaction_t tmp;
             if(!queued && 0!=m_queued_transactions) {
                 if(!skip_batch_commit && 0!=m_batch_left) {
                     if(m_queued_transactions>=max_transactions-1) {
@@ -113,8 +130,8 @@ namespace espidf {
                         --m_queued_transactions;
                     }
                     
-                    spi_device::make_write(&m_trans[5],m_buffer,m_batch_left*2);
-                    rr=m_spi.queue_transaction(&m_trans[5],timeout);
+                    spi_device::make_write(&tmp,m_buffer,m_batch_left*2);
+                    rr=m_spi.queue_transaction(&tmp,timeout);
                     if(spi_result::success!=rr)
                         goto send_transaction_error;
                     m_batch_left=0;
@@ -159,6 +176,7 @@ send_transaction_error:
                 ++m_queued_transactions;
             return result::success;
         }
+        
         result send_next_command(uint8_t cmd,bool queued,bool skip_batch_commit=false) {
             spi_transaction_t* ptrans = &m_trans[m_next_transaction];
             m_next_transaction=(m_next_transaction+1)%max_transactions;
@@ -177,8 +195,7 @@ send_transaction_error:
             }
             // for some reason this trans struct seems to get corrupted
             // so we just rewrite the whole thing
-            spi_device::make_write(&m_trans[5],m_buffer,m_batch_left*2);
-            result r = send_transaction(&m_trans[5],queued,true);
+            result r = send_next_data(m_buffer,m_batch_left*2,queued);
             if(result::success!=r)
                 return r;
             m_batch_left=0;
@@ -228,11 +245,7 @@ send_transaction_error:
             result r;
             size_t index = m_batch_left;
             if(index==buffer_size/2) {
-                //printf("batch write sending %d bytes\r\n",(int)m_batch_left*2);
-                /*if(spi_result::success!=m_spi.transaction(&m_trans[5],true)) {
-                    return result::io_error;
-                }*/
-                r=send_next_data(m_buffer,buffer_size,queued,true);
+                 r=send_next_data(m_buffer,buffer_size,queued,true);
                 if(result::success!=r) {
                     return r;
                 }
