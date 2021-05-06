@@ -961,7 +961,7 @@ namespace gfx {
             bool transparent_background = true,
             unsigned int tab_width=4,
             srect16* clip=nullptr) {
-            gfx_result r;
+            gfx_result r=gfx_result::success;
             if(nullptr==text)
                 return gfx_result::invalid_argument;
             const char*sz=text;
@@ -1021,18 +1021,45 @@ namespace gfx {
                             bits::int_max accum=0;
                             memcpy(&accum,p,wb);
                             p+=wb;
+                            int run_start_fg = -1;
+                            int run_start_bg = -1;
                             for(size_t n=0;n<fc.width();++n) {
                                 if(accum&m) {
-                                    r=point(destination,spoint16(chr.left()+n,chr.top()+j),color,clip);
-                                    if(gfx_result::success!=r)
-                                        return r;
-                                } else if(!transparent_background) {
-                                    r=point(destination,spoint16(chr.left()+n,chr.top()+j),backcolor,clip);
-                                    if(gfx_result::success!=r)
-                                        return r;
+                                    if(!transparent_background&&-1!=run_start_bg) {
+                                        r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip);
+                                        run_start_bg=-1;
+                                    }
+                                    if(-1==run_start_fg)
+                                        run_start_fg=n;
+                                    //r=point(destination,spoint16(chr.left()+n,chr.top()+j),color,clip);
+                                } else {
+                                    if(-1!=run_start_fg) {
+                                        r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
+                                        run_start_fg=-1;
+                                    }
+                                    if(!transparent_background) {
+                                        if(-1==run_start_bg)
+                                            run_start_bg=n;
+                                    }
                                 }
 
                                 accum<<=1;
+                            }
+                            if(-1!=run_start_fg) {
+                                //r=filled_rectangle(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
+                                for(int k=run_start_fg;k<fc.width()-1;++k) {
+                                    r=point(destination,spoint16(k+chr.left(),j+chr.top()),color,clip);
+                                    if(gfx_result::success!=r)
+                                        return r;
+                                }
+                            }
+                            if(!transparent_background&&-1!=run_start_bg) {
+                                //r=filled_rectangle(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
+                                for(int k=run_start_bg;k<fc.width()-1;++k) {
+                                    r=point(destination,spoint16(k+chr.left(),j+chr.top()),color,clip);
+                                    if(gfx_result::success!=r)
+                                        return r;
+                                }
                             }
                         }
                         chr=chr.offset(fc.width(),0);

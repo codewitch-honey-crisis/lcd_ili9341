@@ -14,6 +14,10 @@ extern "C" { void app_main(); }
 #include "gfx_drawing.hpp"
 #include "gfx_color_cpp14.hpp"
 #include "../fonts/Bm437_Acer_VGA_8x8.h"
+#include "../fonts/Bm437_ACM_VGA_9x16.h"
+#include "../fonts/Bm437_ATI_9x16.h"
+#include "soc/rtc_wdt.h"
+
 using namespace espidf;
 using namespace gfx;
 
@@ -121,10 +125,11 @@ static void display_pretty_colors()
     }
 }
 
+// produced by request
 void scroll_text_demo() {
     using lcd_color = color<typename lcd_type::pixel_type>;
     lcd.clear(lcd.bounds());
-    const font& f = Bm437_Acer_VGA_8x8_FON;
+    const font& f = Bm437_ATI_9x16_FON;
     const char* text = "Hello world!";
     srect16 text_rect = srect16(spoint16(0,0),f.measure_text((ssize16)lcd.dimensions(),text));
     while(true) {
@@ -136,16 +141,21 @@ void scroll_text_demo() {
 
         text_rect=text_rect.offset(1,0);
         draw::text(lcd,text_rect,text,f,lcd_color::white);
+       // draw::line(lcd,text_rect.inflate(-(text_rect.width()/2),-(text_rect.height()/2)),lcd_color::white);
         if(text_rect.x2>=320)
         {
             draw::text(lcd,text_rect.offset(-320,0),text,f,lcd_color::white);
+        //    draw::line(lcd,text_rect.offset(-320,0).inflate(-(text_rect.width()/2),-(text_rect.height()/2)),lcd_color::white);
         }
         if(text_rect.x1>=320) {
             text_rect=text_rect.offset(-320,0);
         }
+        
+    
+        //vTaskDelay(portMAX_DELAY);
     }
-
 }
+
 void app_main(void)
 {
     // check to make sure SPI was initialized successfully

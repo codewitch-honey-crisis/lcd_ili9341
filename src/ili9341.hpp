@@ -5,7 +5,6 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "spi_master.hpp"
-
 #include "gfx_core.hpp"
 #include "gfx_positioning.hpp"
 #include "gfx_pixel.hpp"
@@ -241,7 +240,7 @@ namespace espidf {
             if(m_batch_left==0)  {
                 return result::success;
             }
-           result r = send_next_data(m_buffer,m_batch_left*2,queued);
+           result r = send_next_data(m_buffer,m_batch_left*2,queued,true);
             if(result::success!=r)
                 return r;
             m_batch_left=0;
@@ -340,7 +339,11 @@ namespace espidf {
             }
             uint16_t w = x2-x1+1;
             uint16_t h = y2-y1+1;
-            result r=batch_write_begin_impl(x1,y1,x2,y2,queued);
+            result r;
+            if(w==1&&w==1) {
+                return pixel_write_impl(x1,y1,color,queued);
+            }
+            r=batch_write_begin_impl(x1,y1,x2,y2,queued);
             if(result::success!=r)
                 return r;
             size_t pc=w*h;
