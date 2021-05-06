@@ -134,6 +134,7 @@ namespace espidf {
                     rr=m_spi.queue_transaction(&tmp,timeout);
                     if(spi_result::success!=rr)
                         goto send_transaction_error;
+                    ++m_queued_transactions;
                     m_batch_left=0;
                     
                     if(0!=m_queued_transactions)
