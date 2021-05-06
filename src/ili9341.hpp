@@ -646,21 +646,6 @@ send_transaction_error:
                 return xlt_err(r);
             return gfx::gfx_result::success;
         }
-        // commits a pending batch
-        gfx::gfx_result commit_batch() {
-            result r=batch_write_commit();
-            if(result::success!=r)
-                return xlt_err(r);
-                
-            return gfx::gfx_result::success;
-        }
-        // asynchronously commits a pending batch
-        gfx::gfx_result commit_batch_async() {
-            result r=queued_batch_write_commit();
-            if(result::success!=r)
-                return xlt_err(r);
-            return gfx::gfx_result::success;
-        }
         // writes a pixel to a pending batch
         gfx::gfx_result write_batch(pixel_type color) {
             uint16_t p = color.value();
@@ -673,6 +658,21 @@ send_transaction_error:
         gfx::gfx_result write_batch_async(pixel_type color) {
             uint16_t p = color.value();
             result r = this->queued_batch_write(&p,1);
+            if(result::success!=r)
+                return xlt_err(r);
+            return gfx::gfx_result::success;
+        }
+        // commits a pending batch
+        gfx::gfx_result commit_batch() {
+            result r=batch_write_commit();
+            if(result::success!=r)
+                return xlt_err(r);
+                
+            return gfx::gfx_result::success;
+        }
+        // asynchronously commits a pending batch
+        gfx::gfx_result commit_batch_async() {
+            result r=queued_batch_write_commit();
             if(result::success!=r)
                 return xlt_err(r);
             return gfx::gfx_result::success;

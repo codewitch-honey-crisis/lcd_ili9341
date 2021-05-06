@@ -7,8 +7,8 @@ namespace gfx {
     // represents an in-memory bitmap
     template<typename PixelType>
     class bitmap final {
-        const size16 m_dimensions;
-        uint8_t* const m_begin;
+        size16 m_dimensions;
+        uint8_t* m_begin;
     public:
         // the type of the bitmap, itself
         using type = bitmap<PixelType>;
@@ -20,6 +20,14 @@ namespace gfx {
         bitmap(size16 dimensions,void* buffer) : m_dimensions(dimensions),m_begin((uint8_t*)buffer) {}
         // constructs a new bitmap with the specified width, height and buffer
         bitmap(uint16_t width,uint16_t height,void* buffer) : m_dimensions(width,height),m_begin((uint8_t*)buffer) {}
+        bitmap(const type& rhs)=default;
+        type& operator=(const type& rhs)=default;
+        bitmap(type&& rhs)=default;
+        type& operator=(type&& rhs) {
+            m_dimensions = rhs.m_dimensions;
+            m_begin = rhs.m_begin;
+            return *this;
+        }
         gfx_result point(point16 location,pixel_type* out_pixel) const {
             if(nullptr==out_pixel)
                 return gfx_result::invalid_argument;

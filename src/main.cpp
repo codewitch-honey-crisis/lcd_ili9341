@@ -1,3 +1,4 @@
+  
 extern "C" { void app_main(); }
 
 #include <stdio.h>
@@ -10,8 +11,8 @@ extern "C" { void app_main(); }
 #include "esp_spiffs.h"
 #include "ili9341.hpp"
 #include "pretty_effect.hpp"
+
 using namespace espidf;
-using namespace io;
 using namespace gfx;
 
 // the following is configured for the ESP-WROVER-KIT

@@ -10,7 +10,7 @@
 #include <math.h>
 #include "sdkconfig.h"
 #include "esp_err.h"
-#include "gfx_core.hpp"
+#include "gfx_pixel.hpp"
 #ifdef CONFIG_IDF_TARGET_ESP32
 #include "decode_image.hpp"
 
