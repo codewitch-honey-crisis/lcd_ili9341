@@ -273,7 +273,7 @@ namespace espidf {
             if(result::success!=r)
                 return r;
             //Page address set
-            r=send_next_command(0x2B,queued);
+            r=send_next_command(0x2B,queued,true);
             if(result::success!=r)
                 return r;
             tx_data[0]=y1>>8;        //Start page high
@@ -282,7 +282,7 @@ namespace espidf {
             tx_data[3]=y2&0xff;      //end page low
             r=send_next_data(tx_data,4,queued,true);
             // memory write
-            return send_next_command(0x2C,queued);
+            return send_next_command(0x2C,queued,true);
 
         }       
         result batch_write_impl(const uint16_t* pixels,size_t count,bool queued) {
