@@ -9,12 +9,7 @@ extern "C" { void app_main(); }
 #include "spi_master.hpp"
 #include "esp_spiffs.h"
 #include "ili9341.hpp"
-#include "stream.hpp"
-#include "gfx_bitmap.hpp"
-#include "gfx_image.hpp"
-#include "gfx_drawing.hpp"
-#include "gfx_color_cpp14.hpp"
-#include "../fonts/Bm437_ATI_8x16.h"
+#include "pretty_effect.hpp"
 using namespace espidf;
 using namespace io;
 using namespace gfx;
@@ -85,66 +80,45 @@ using lcd_type = ili9341<LCD_HOST,
                         PIN_NUM_RST,
                         PIN_NUM_BCKL>;
 
-// declaring this saves us typing - we can do lcd_color::white for example:
-using lcd_color = gfx::color<typename lcd_type::pixel_type>;
 lcd_type lcd;
 
-// demonstrates how to use the "bare metal" driver calls, bypassing GFX
-void raw_driver_batch_demo() {
-    // not batched. slow and floods the bus, tickling
-    // the task watchdog. You'll see it in the serial out
-    /*for(uint16_t y=0;y<lcd_type::height;++y) {
-        for(uint16_t x=0;x<lcd_type::width;++x) {
-            // alternate white and black
-            uint16_t v=0xFFFF*((x+y)%2);
-            if(lcd_type::result::success!=lcd.pixel_write(x,y,v)) {
-                printf("write pixel failed\r\n");
-                y=lcd_type::height;
-                return;
-            }
-        }
-    }*/
-    // batched, much faster and more reliable
-    lcd.batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
-    for(uint16_t y=0;y<lcd_type::height;++y) {
-        for(uint16_t x=0;x<lcd_type::width;++x) {
-            uint16_t v=0xA01F*((x+y)%2);
-            if(lcd_type::result::success!=lcd.batch_write(&v,1)) {
-                printf("write pixel failed\r\n");
-                y=lcd_type::height;
-                return;
-            }
+//Simple routine to generate some patterns and send them to the LCD. Don't expect anything too
+//impressive. Because the SPI driver handles transactions in the background, we can calculate the next line
+//while the previous one is being sent.
+static void display_pretty_colors()
+{
+    uint16_t *lines[2];
+    //Allocate memory for the pixel buffers
+    for (int i=0; i<2; i++) {
+        lines[i]=(uint16_t*)heap_caps_malloc(320*PARALLEL_LINES*sizeof(uint16_t), MALLOC_CAP_DMA);
+        assert(lines[i]!=NULL);
+    }
+    int frame=0;
+    //Indexes of the line currently being sent to the LCD and the line we're calculating.
+    int sending_line=-1;
+    int calc_line=0;
+
+    while(true) {
+        ++frame;
+        for (int y=0; y<240; y+=PARALLEL_LINES) {
+            //Calculate a line.
+            pretty_effect_calc_lines(lines[calc_line], y, frame, PARALLEL_LINES);
+            //Finish up the sending process of the previous line, if any
+            //if (sending_line!=-1) lcd.queued_wait();//send_line_finish(spi);
+            //Swap sending_line and calc_line
+            sending_line=calc_line;
+            calc_line=(calc_line==1)?0:1;
+            //Send the line we currently calculated.
+            // queued_frame_write works better the larger the transfer size. Here ours is pretty big
+            lcd.queued_frame_write(0,y,lcd_type::width-1,y+PARALLEL_LINES-1,(uint8_t*)lines[sending_line]);
+            //The line set is queued up for sending now; the actual sending happens in the
+            //background. We can go on to calculate the next line set as long as we do not
+            //touch line[sending_line]; the SPI sending process is still reading from that.
         }
     }
-    lcd.batch_write_commit();
-    //vTaskDelay(3000/portTICK_PERIOD_MS);
-    // queued/asynchronous batching - SLOWER than the above
-    lcd.queued_batch_write_begin(0,0,lcd_type::width-1,lcd_type::height-1);
-    for(uint16_t y=0;y<lcd_type::height;++y) {
-        for(uint16_t x=0;x<lcd_type::width;++x) {
-            // here's the reason this is no good:
-            // we're simply not doing enough work
-            // below to make it worthwhile. The
-            // only way queued operations are
-            // worth it is if your work between
-            // driver calls is more than the 
-            // additional overhead incurred by
-            // queuing. Since all we're doing
-            // below is some very basic math,
-            // this doesn't pay for itself
-            uint16_t v=0xF800*((x+y)%2);
-            v+=v=0x001F*(1-((x+y)%2));
-            if(lcd_type::result::success!=lcd.queued_batch_write(&v,1)) {
-                printf("write pixel failed\r\n");
-                y=lcd_type::height;
-                return;
-            }           
-        }
-    }
-    lcd.queued_batch_write_commit();
-    //vTaskDelay(3000/portTICK_PERIOD_MS);
-    
 }
+
+
 void app_main(void)
 {
     // check to make sure SPI was initialized successfully
@@ -161,99 +135,10 @@ void app_main(void)
     conf.partition_label="storage";
     ret=esp_vfs_spiffs_register(&conf);
     ESP_ERROR_CHECK(ret);   
-    raw_driver_batch_demo();
-    
-    // clear the display
-    lcd.clear(lcd.bounds());
-    
-    // we actually don't need more than 3 bits here for the colors 
-    // we are using. Storing it in 3 bits saves memory but the 
-    // color depth isn't realistic for most things
-    using bmp_type = bitmap<rgb_pixel<3> /*typename lcd_type::pixel_type*/>;
-    using bmp_color = color<typename bmp_type::pixel_type>;
-    const size16 bmp_size(64,64);
-    uint8_t* bmp_buffer = (uint8_t*)malloc(bmp_type::sizeof_buffer(bmp_size));
-    if(nullptr==bmp_buffer) {
-        printf("out of memory\r\n");
-        abort();
+    gfx_result rr;
+    rr=pretty_effect_init();
+    if(gfx_result::success!=rr) {
+        printf("Error loading demo: %d\r\n",(int)rr);
     }
- 
-    bmp_type bmp(bmp_size,bmp_buffer);
-    bmp.clear(bmp.bounds());
-   
-    // bounding info for the face
-    srect16 bounds=(srect16)bmp.bounds();
-    rect16 ubounds=(rect16)bounds;
-
-    // draw the face
-    draw::filled_ellipse(bmp,bounds,bmp_color::yellow);
-    
-    // draw the left eye
-    srect16 eye_bounds_left(spoint16(bounds.width()/5,
-                            bounds.height()/5),
-                            ssize16(bounds.width()/5,
-                            bounds.height()/3));
-    
-    draw::filled_ellipse(bmp,eye_bounds_left,bmp_color::black);
-    
-    // draw the right eye
-    srect16 eye_bounds_right(
-        spoint16(
-            64-eye_bounds_left.x1-eye_bounds_left.width(),
-            eye_bounds_left.y1
-        ),eye_bounds_left.dimensions());
-    draw::filled_ellipse(bmp,eye_bounds_right,bmp_color::black);
-    
-    // draw the mouth
-    srect16 mouth_bounds=bounds.inflate(-bounds.width()/7,
-                                    -bounds.height()/8).normalize();
-    // we need to clip part of the circle we'll be drawing
-    srect16 mouth_clip(mouth_bounds.x1,
-                    mouth_bounds.y1+mouth_bounds.height()/(float)1.6,
-                    mouth_bounds.x2,
-                    mouth_bounds.y2);
-    draw::ellipse(bmp,mouth_bounds,bmp_color::black,&mouth_clip);
-
-    // draw it centered horizontally 
-    draw::bitmap(lcd,bounds.offset((lcd_type::width-bmp_size.width)/2,0),
-                                bmp,
-                                ubounds);
-    
-    const font& f = Bm437_ATI_8x16_FON;
-    const char* text = "Have a nice day!";
-    // center the text
-    srect16 sr = (srect16)lcd.bounds().offset(0,bmp_size.height).crop(lcd.bounds());
-    ssize16 tsiz = f.measure_text(sr.dimensions(),text);
-    sr=sr.offset((sr.width()-tsiz.width)/2,0);
-    // draw it
-    draw::text(lcd,sr,text,f,lcd_color::antique_white);
-    
-    //vTaskDelay(3000/portTICK_PERIOD_MS);
-    free(bmp_buffer);
-    // load an image
-    io::file_stream fs("/spiffs/image3.jpg");
-    if(!fs.caps().read) {
-        printf("image file not found\r\n");
-        abort();
-    }
-   
-    gfx_result gr=jpeg_image::load(&fs,[](const jpeg_image::region_type& region,
-                                    point16 location,
-                                    void* state) {
-        // we're not using it here, but we can do things like specify 
-        // clipping or flipping here if we need it:
-        
-        return gfx_result::success==
-            draw::bitmap(lcd,
-                        srect16((spoint16)location,
-                            (ssize16)region.dimensions()),
-                        region,
-                        region.bounds());
-        
-        
-    },nullptr);
-    if(gr!=gfx_result::success) {
-        printf("image draw error %d\r\n",(int)gr);
-    }
-    vTaskDelay(portMAX_DELAY); 
+    display_pretty_colors();
 }

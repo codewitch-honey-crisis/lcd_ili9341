@@ -29,6 +29,9 @@ namespace gfx {
         constexpr inline bool operator==(const type& rhs) const { 
             return x==rhs.x && y==rhs.y;   
         }
+        constexpr inline type offset(bits::signedx<value_type> x,bits::signedx<value_type> y) {
+            return type(this->x+x,this->y+y);
+        }
     };
     // represents a size with 16-bit integer coordinates
     template <typename T>

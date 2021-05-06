@@ -322,6 +322,27 @@ send_transaction_error:
             }
             return result::success;
         }
+        // writes bitmap data to the frame buffer
+        result frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,const uint8_t* bmp_data) {
+            // normalize values
+            uint16_t tmp;
+            if(x1>x2) {
+                tmp=x1;
+                x1=x2;
+                x2=tmp;
+            }
+            if(y1>y2) {
+                tmp=y1;
+                y1=y2;
+                y2=tmp;
+            }
+            if(x1>=width || y1>=height)
+                return result::success;
+            result r=batch_write_begin(x1,y1,x2,y2);
+            if(result::success!=r)
+                return r;
+            return send_next_data(bmp_data,(x2-x1+1)*(y2-y1+1)*2,false,true);
+        }
         // queues a frame write operation. The bitmap data must be valid for the duration of the operation (until queued_wait())
         result queued_frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint8_t* bmp_data,bool precommit=false) {
             // normalize values
@@ -357,77 +378,9 @@ send_transaction_error:
             //finish because we may as well spend the time calculating the draw. When that is done, we can call
             //queued_wait(), which will wait for the transfers to be don.
             // otherwise, the transactions will be queued as the old ones finish
-            return r;
-            
+            return r;    
         }
-        // waits for all pending queued operations
-        result queued_wait()
-        {
-            spi_transaction_t *rtrans;
-            //Wait for all of the transactions to be done and get back the results.
-            for (;m_queued_transactions>0; --m_queued_transactions) {
-                if(spi_result::success!=m_spi.get_next_queued_result(&rtrans))
-                    return result::io_error;
-                //We could inspect rtrans now if we received any info back. The LCD is treated as write-only, though.
-            }
-            return result::success;
-        }
-        // begins a batch write for the given target coordinates
-        result batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
-            return batch_write_begin_impl(x1,y1,x2,y2,false);
-        }
-        // queues the beginning of a batch write for the target coordinates
-        result queued_batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
-            return batch_write_begin_impl(x1,y1,x2,y2,true);
-        }
-        // does a batch write. the batch operation must have been started with
-        // batch_write_begin() or queued_batch_write_begin()
-        result batch_write(const uint16_t* pixels,size_t count) {
-            return batch_write_impl(pixels,count,false);
-        }
-        // does a queued batch write. the batch operation must have been started with
-        // batch_write_begin() or queued_batch_write_begin()
-        result queued_batch_write(const uint16_t* pixels,size_t count) {
-            return batch_write_impl(pixels,count,true);
-        }
-        // commits any pending batch
-        result batch_write_commit() {
-            return batch_write_commit_impl(false);
-        }
-        // queues the commit of any pending batch
-        result queued_batch_write_commit() {
-            return batch_write_commit_impl(true);
-        }
-        // writes bitmap data to the frame buffer
-        result frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,const uint8_t* bmp_data) {
-            // normalize values
-            uint16_t tmp;
-            if(x1>x2) {
-                tmp=x1;
-                x1=x2;
-                x2=tmp;
-            }
-            if(y1>y2) {
-                tmp=y1;
-                y1=y2;
-                y2=tmp;
-            }
-            if(x1>=width || y1>=height)
-                return result::success;
-            result r=batch_write_begin(x1,y1,x2,y2);
-            if(result::success!=r)
-                return r;
-            return send_next_data(bmp_data,(x2-x1+1)*(y2-y1+1)*2,false,true);
-        }
-        // writes a pixel at the specified coordinates
-        inline result pixel_write(uint16_t x,uint16_t y,uint16_t color) {
-            return pixel_write_impl(x,y,color,false);
-        }
-        // queues a write of a pixel at the specified coordinates
-        inline result queued_pixel_write(uint16_t x,uint16_t y,uint16_t color) {
-            return pixel_write_impl(x,y,true);
-        }
-        // fills the target rectangle of the frame buffer with a pixel
+// fills the target rectangle of the frame buffer with a pixel
         result frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
             // normalize values
             uint16_t tmp;
@@ -486,6 +439,53 @@ send_transaction_error:
             return r;
         }
 
+        // begins a batch write for the given target coordinates
+        result batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
+            return batch_write_begin_impl(x1,y1,x2,y2,false);
+        }
+        // queues the beginning of a batch write for the target coordinates
+        result queued_batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
+            return batch_write_begin_impl(x1,y1,x2,y2,true);
+        }
+        // does a batch write. the batch operation must have been started with
+        // batch_write_begin() or queued_batch_write_begin()
+        result batch_write(const uint16_t* pixels,size_t count) {
+            return batch_write_impl(pixels,count,false);
+        }
+        // does a queued batch write. the batch operation must have been started with
+        // batch_write_begin() or queued_batch_write_begin()
+        result queued_batch_write(const uint16_t* pixels,size_t count) {
+            return batch_write_impl(pixels,count,true);
+        }
+        // commits any pending batch
+        result batch_write_commit() {
+            return batch_write_commit_impl(false);
+        }
+        // queues the commit of any pending batch
+        result queued_batch_write_commit() {
+            return batch_write_commit_impl(true);
+        }
+        // writes a pixel at the specified coordinates
+        inline result pixel_write(uint16_t x,uint16_t y,uint16_t color) {
+            return pixel_write_impl(x,y,color,false);
+        }
+        // queues a write of a pixel at the specified coordinates
+        inline result queued_pixel_write(uint16_t x,uint16_t y,uint16_t color) {
+            return pixel_write_impl(x,y,true);
+        }
+        // waits for all pending queued operations
+        result queued_wait()
+        {
+            spi_transaction_t *rtrans;
+            //Wait for all of the transactions to be done and get back the results.
+            for (;m_queued_transactions>0; --m_queued_transactions) {
+                if(spi_result::success!=m_spi.get_next_queued_result(&rtrans))
+                    return result::io_error;
+                //We could inspect rtrans now if we received any info back. The LCD is treated as write-only, though.
+            }
+            return result::success;
+        }
+        
         // GFX bindings
  public:
         // indicates the type, itself
