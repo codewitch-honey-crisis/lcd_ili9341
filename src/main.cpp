@@ -11,7 +11,9 @@ extern "C" { void app_main(); }
 #include "esp_spiffs.h"
 #include "ili9341.hpp"
 #include "pretty_effect.hpp"
-
+#include "gfx_drawing.hpp"
+#include "gfx_color_cpp14.hpp"
+#include "../fonts/Bm437_Acer_VGA_8x8.h"
 using namespace espidf;
 using namespace gfx;
 
@@ -119,7 +121,31 @@ static void display_pretty_colors()
     }
 }
 
+void scroll_text_demo() {
+    using lcd_color = color<typename lcd_type::pixel_type>;
+    lcd.clear(lcd.bounds());
+    const font& f = Bm437_Acer_VGA_8x8_FON;
+    const char* text = "Hello world!";
+    srect16 text_rect = srect16(spoint16(0,0),f.measure_text((ssize16)lcd.dimensions(),text));
+    while(true) {
+        draw::filled_rectangle(lcd,text_rect,lcd_color::black);
+        if(text_rect.x2>=320)
+        {
+            draw::filled_rectangle(lcd,text_rect.offset(-320,0),lcd_color::black);
+        }
 
+        text_rect=text_rect.offset(1,0);
+        draw::text(lcd,text_rect,text,f,lcd_color::white);
+        if(text_rect.x2>=320)
+        {
+            draw::text(lcd,text_rect.offset(-320,0),text,f,lcd_color::white);
+        }
+        if(text_rect.x1>=320) {
+            text_rect=text_rect.offset(-320,0);
+        }
+    }
+
+}
 void app_main(void)
 {
     // check to make sure SPI was initialized successfully
@@ -127,6 +153,7 @@ void app_main(void)
         printf("SPI host initialization error.\r\n");
         abort();
     }
+    //scroll_text_demo();
     // mount SPIFFS
     esp_err_t ret;
     esp_vfs_spiffs_conf_t conf = {};

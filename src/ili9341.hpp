@@ -247,7 +247,11 @@ namespace espidf {
             m_batch_left=0;
             return result::success;
         }
-        result batch_write_begin_impl(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,bool queued) {
+        result batch_write_begin_impl(uint16_t x1,
+                                    uint16_t y1,
+                                    uint16_t x2,
+                                    uint16_t y2,
+                                    bool queued) {
              // normalize values
             uint16_t tmp;
             if(x1>x2) {
@@ -281,11 +285,12 @@ namespace espidf {
             tx_data[2]=y2>>8;        //end page high
             tx_data[3]=y2&0xff;      //end page low
             r=send_next_data(tx_data,4,queued,true);
-            // memory write
+            // Memory write
             return send_next_command(0x2C,queued,true);
-
         }       
-        result batch_write_impl(const uint16_t* pixels,size_t count,bool queued) {
+        result batch_write_impl(const uint16_t* pixels,
+                                size_t count,
+                                bool queued) {
             if(!m_initialized)
                 return result::io_error;
             result r;
@@ -315,12 +320,49 @@ namespace espidf {
             }
             return result::success;
         }
-        result pixel_write_impl(uint16_t x,uint16_t y,uint16_t color,bool queued) {
+        result frame_fill_impl(uint16_t x1,
+                            uint16_t y1, 
+                            uint16_t x2,
+                            uint16_t y2,
+                            uint16_t color,
+                            bool queued) {
+            // normalize values
+            uint16_t tmp;
+            if(x1>x2) {
+                tmp=x1;
+                x1=x2;
+                x2=tmp;
+            }
+            if(y1>y2) {
+                tmp=y1;
+                y1=y2;
+                y2=tmp;
+            }
+            uint16_t w = x2-x1+1;
+            uint16_t h = y2-y1+1;
+            result r=batch_write_begin_impl(x1,y1,x2,y2,queued);
+            if(result::success!=r)
+                return r;
+            size_t pc=w*h;
+            while(pc>0) {
+                r=batch_write_impl(&color,1,queued);
+                if(result::success!=r)
+                    return r;
+                --pc;
+            }
+            r=batch_write_commit_impl(queued);
+            return r;           
+        }
+        result pixel_write_impl(uint16_t x,
+                                uint16_t y,
+                                uint16_t color,
+                                bool queued) {
             // check values
             if(x>=width || y>=height)
                 return result::success;
             
-            // set the address window. we're not actually batching here.
+            // set the address window. we're not
+            // actually batching here.
             result r=batch_write_begin_impl(x,y,x,y,queued);
             if(result::success!=r)
                 return r;
@@ -457,61 +499,11 @@ namespace espidf {
         }
         // fills the target rectangle of the frame buffer with a pixel
         result frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
-            // normalize values
-            uint16_t tmp;
-            if(x1>x2) {
-                tmp=x1;
-                x1=x2;
-                x2=tmp;
-            }
-            if(y1>y2) {
-                tmp=y1;
-                y1=y2;
-                y2=tmp;
-            }
-            uint16_t w = x2-x1+1;
-            uint16_t h = y2-y1+1;
-            result r=batch_write_begin(x1,y1,x2,y2);
-            if(result::success!=r)
-                return r;
-            size_t pc=w*h;
-            while(pc>0) {
-                r=batch_write(&color,1);
-                if(result::success!=r)
-                    return r;
-                --pc;
-            }
-            r=batch_write_commit();
-            return r;           
+            return frame_fill_impl(x1,y1,x2,y2,color,false);
         }
         // queues the fill of a target rectangle with the specified pixel
         result queued_frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
-            // normalize values
-            uint16_t tmp;
-            if(x1>x2) {
-                tmp=x1;
-                x1=x2;
-                x2=tmp;
-            }
-            if(y1>y2) {
-                tmp=y1;
-                y1=y2;
-                y2=tmp;
-            }
-            uint16_t w = x2-x1+1;
-            uint16_t h = y2-y1+1;
-            result r=queued_batch_write_begin(x1,y1,x2,y2);
-            if(result::success!=r)
-                return r;
-            size_t pc=w*h;
-            while(pc>0) {
-                r=queued_batch_write(&color,1);
-                if(result::success!=r)
-                    return r;
-                --pc;
-            }
-            r=queued_batch_write_commit();
-            return r;
+            return frame_fill_impl(x1,y1,x2,y2,color,true);
         }
 
         // begins a batch write for the given target coordinates
