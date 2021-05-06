@@ -114,64 +114,110 @@ namespace espidf {
             }
             return result::success;
         }
+        result ensure_free_transaction() {
+            spi_result rr;
+            // free up a transaction if necessary
+            if(m_queued_transactions>=max_transactions-1) {
+                spi_transaction_t *rtrans;
+                rr=m_spi.get_next_queued_result(&rtrans);
+                if(spi_result::success!=rr) {
+                    return xlt_err(rr);
+                }
+                --m_queued_transactions;
+            }
+            if(rr!=spi_result::success)
+                return xlt_err(rr);
+            return result::success;
+        }
+        result commit_batch_internal(spi_transaction_t* tmp,bool queued) {
+            spi_result rr;
+            if(!queued) {
+                spi_device::make_write(tmp,m_buffer,m_batch_left*2);
+                rr=m_spi.transaction(tmp,true);
+                if(spi_result::success!=rr) {
+                    return xlt_err(rr);
+                }
+            } else {
+                result r=ensure_free_transaction();
+                if(result::success!=r)
+                    return r;
+                spi_device::make_write(tmp,m_buffer,m_batch_left*2);
+                rr=m_spi.queue_transaction(tmp,timeout);
+                if(spi_result::success!=rr) {
+                    return xlt_err(rr);
+                }
+                ++m_queued_transactions;
+            }
+            m_batch_left=0;
+            return result::success;
+        }
         result send_transaction(spi_transaction_t* trans,bool queued,bool skip_batch_commit=false) {
+            // initialize the display if necessary
             result r = initialize();
             if(result::success!=r)
                 return r;
             spi_result rr;
             spi_transaction_t tmp;
+            // if we're not queuing but there are queued transactions currently
+            // we have to flush everyhing:
+            bool batch_committed=false;
             if(!queued && 0!=m_queued_transactions) {
+                // commit the batch if we have to
                 if(!skip_batch_commit && 0!=m_batch_left) {
-                    if(m_queued_transactions>=max_transactions-1) {
-                        spi_transaction_t *rtrans;
-                        rr=m_spi.get_next_queued_result(&rtrans);
-                        if(spi_result::success!=rr)
-                            goto send_transaction_error;
-                        --m_queued_transactions;
-                    }
-                    
-                    spi_device::make_write(&tmp,m_buffer,m_batch_left*2);
-                    rr=m_spi.queue_transaction(&tmp,timeout);
-                    if(spi_result::success!=rr)
-                        goto send_transaction_error;
-                    ++m_queued_transactions;
-                    m_batch_left=0;
-                    
+                    r=commit_batch_internal(&tmp,true);
+                    if(result::success!=r)
+                        return r;
+                    batch_committed=true;
+                    // wait for everything to complete
                     if(0!=m_queued_transactions)
                         r= queued_wait();
                 } else {
+                    // wait for everything to complete
                     r=queued_wait();
                 }
                 if(result::success!=r)
                     return r;
                 
+            } 
+            // commit the batch if necessary and we haven't already
+            if(!batch_committed && !skip_batch_commit&&0!=m_batch_left) {
+                if(!queued) {
+                    r=commit_batch_internal(&tmp,false);
+                    if(result::success!=r)
+                        return r;
+                } else {
+                    // HACK: We can't use tmp here because
+                    // the transaction won't complete immediately
+                    // so what we have to do is forcibly open
+                    // a new slot in m_trans, move the current
+                    // *trans to the new slot, and then replace
+                    // *the current slot* with the batch commit
+                    r=ensure_free_transaction();
+                    if(result::success!=r)
+                        return r;
+                    size_t next_free = (m_queued_transactions+1)%max_transactions;
+                    memcpy(&m_trans[next_free],trans,sizeof(spi_transaction_t));
+                    r=commit_batch_internal(trans,true);
+                    if(result::success!=r) {
+                        return r;
+                    }
+                    trans = &m_trans[next_free];
+                    m_batch_left=0;
+                }
+                m_batch_left=0;
+                batch_committed=true;
             }
             
-            if(m_queued_transactions>=max_transactions-1) {
-                spi_transaction_t*ptrans;
-                rr=m_spi.get_next_queued_result(&ptrans);
-                if(spi_result::success!=rr)
-                    goto send_transaction_error;
-                --m_queued_transactions;
-            }
             if(queued) {
+                r=ensure_free_transaction();
+                if(result::success!=r)
+                    return r;
                 rr = m_spi.queue_transaction(trans,timeout);
             } else {
-                
                 rr = m_spi.transaction(trans,true);
             }
-send_transaction_error:
             if(spi_result::success!=rr) {
-                switch(rr) {
-                    case spi_result::timeout:
-                        return result::timeout;
-                    case spi_result::out_of_memory:
-                        return result::out_of_memory;
-                    case spi_result::previous_transactions_pending:
-                        return result::io_pending;
-                    default:
-                        return result::io_error;
-                }
+                return xlt_err(rr);
             }
             if(queued)
                 ++m_queued_transactions;
