@@ -981,7 +981,6 @@ namespace gfx {
                             }
                             if(-1==run_start_fg)
                                 run_start_fg=n;
-                            //r=point(destination,spoint16(chr.left()+n,chr.top()+j),color,clip);
                         } else {
                             if(-1!=run_start_fg) {
                                 r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
@@ -996,20 +995,11 @@ namespace gfx {
                         accum<<=1;
                     }
                     if(-1!=run_start_fg) {
-                        //r=filled_rectangle(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
-                        for(int k=run_start_fg;k<fc.width()-1;++k) {
-                            r=point(destination,spoint16(k+chr.left(),j+chr.top()),color,clip);
-                            if(gfx_result::success!=r)
-                                return r;
-                        }
+                        r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
                     }
                     if(!transparent_background&&-1!=run_start_bg) {
-                        //r=filled_rectangle(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
-                        for(int k=run_start_bg;k<fc.width()-1;++k) {
-                            r=point(destination,spoint16(k+chr.left(),j+chr.top()),backcolor,clip);
-                            if(gfx_result::success!=r)
-                                return r;
-                        }
+                        r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
+                        
                     }
                 }
                 return r;
