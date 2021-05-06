@@ -956,7 +956,42 @@ namespace gfx {
         template<typename Destination>
         struct draw_font_batch_helper<Destination,true> {
             static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip) {
-                return draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+                // transparent_background is ignored for this routine
+                srect16 sr = srect16(chr);
+                if(nullptr!=clip)
+                    sr=sr.crop(*clip);
+                if(!sr.intersects((srect16)destination.bounds()))
+                    return gfx_result::success;
+                rect16 dr = (rect16)sr.crop((srect16)destination.bounds());
+                
+                gfx_result r = destination.begin_batch(dr);
+                if(gfx_result::success!=r)
+                    return r;
+                // draw the character
+                size_t wb = (fc.width()+7)/8;
+                const uint8_t* p = fc.data();
+                for(size_t j=0;j<font.height();++j) {
+                    bits::int_max m = 1 << (fc.width()-1);
+                    bits::int_max accum=0;
+                    memcpy(&accum,p,wb);
+                    p+=wb;
+                    for(size_t n=0;n<=fc.width();++n) {
+                        if(dr.intersects(point16(n+chr.left(),j+chr.top()))) {
+                            if(accum&m) {
+                                r=destination.write_batch(color);
+                                if(gfx_result::success!=r)
+                                    return r;
+                            } else {
+                                r=destination.write_batch(backcolor);
+                                if(gfx_result::success!=r)
+                                    return r;
+                            }
+                        }
+                        accum<<=1;
+                    }
+                }
+                r=destination.commit_batch();
+                return r;
             }
         };
         template<typename Destination>
@@ -1070,7 +1105,10 @@ namespace gfx {
                         
                         break;
                     default:
-                        r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+                        if(transparent_background)
+                            r=draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+                        else
+                            r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
                         if(gfx_result::success!=r)
                             return r;
                         chr=chr.offset(fc.width(),0);
