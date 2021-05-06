@@ -731,6 +731,7 @@ namespace gfx {
                 }
             }
         }
+        
     public:
         // draws a point at the specified location and of the specified color, with an optional clipping rectangle
         template<typename Destination>
@@ -949,6 +950,72 @@ namespace gfx {
             return bmp_helper<Destination,Source,typename Destination::pixel_type,typename Source::pixel_type>
                 ::draw_bitmap(destination,dest_rect,source,source_rect,options,clip);
         }
+        template<typename Destination,bool Batch>
+        struct draw_font_batch_helper {
+        };
+        template<typename Destination>
+        struct draw_font_batch_helper<Destination,true> {
+            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip) {
+                return draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+            }
+        };
+        template<typename Destination>
+        struct draw_font_batch_helper<Destination,false> {
+            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip) {
+                gfx_result r = gfx_result::success;
+                // draw the character
+                size_t wb = (fc.width()+7)/8;
+                const uint8_t* p = fc.data();
+                for(size_t j=0;j<font.height();++j) {
+                    bits::int_max m = 1 << (fc.width()-1);
+                    bits::int_max accum=0;
+                    memcpy(&accum,p,wb);
+                    p+=wb;
+                    int run_start_fg = -1;
+                    int run_start_bg = -1;
+                    for(size_t n=0;n<fc.width();++n) {
+                        if(accum&m) {
+                            if(!transparent_background&&-1!=run_start_bg) {
+                                r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip);
+                                run_start_bg=-1;
+                            }
+                            if(-1==run_start_fg)
+                                run_start_fg=n;
+                            //r=point(destination,spoint16(chr.left()+n,chr.top()+j),color,clip);
+                        } else {
+                            if(-1!=run_start_fg) {
+                                r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
+                                run_start_fg=-1;
+                            }
+                            if(!transparent_background) {
+                                if(-1==run_start_bg)
+                                    run_start_bg=n;
+                            }
+                        }
+
+                        accum<<=1;
+                    }
+                    if(-1!=run_start_fg) {
+                        //r=filled_rectangle(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
+                        for(int k=run_start_fg;k<fc.width()-1;++k) {
+                            r=point(destination,spoint16(k+chr.left(),j+chr.top()),color,clip);
+                            if(gfx_result::success!=r)
+                                return r;
+                        }
+                    }
+                    if(!transparent_background&&-1!=run_start_bg) {
+                        //r=filled_rectangle(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
+                        for(int k=run_start_bg;k<fc.width()-1;++k) {
+                            r=point(destination,spoint16(k+chr.left(),j+chr.top()),backcolor,clip);
+                            if(gfx_result::success!=r)
+                                return r;
+                        }
+                    }
+                }
+                return r;
+            }
+        };
+        
         // draws text to the specified destination rectangle with the specified font and colors and optional clipping rectangle
         template<typename Destination>
         static gfx_result text(
@@ -1013,55 +1080,9 @@ namespace gfx {
                         
                         break;
                     default:
-                        // draw the character
-                        size_t wb = (fc.width()+7)/8;
-                        const uint8_t* p = fc.data();
-                        for(size_t j=0;j<font.height();++j) {
-                            bits::int_max m = 1 << (fc.width()-1);
-                            bits::int_max accum=0;
-                            memcpy(&accum,p,wb);
-                            p+=wb;
-                            int run_start_fg = -1;
-                            int run_start_bg = -1;
-                            for(size_t n=0;n<fc.width();++n) {
-                                if(accum&m) {
-                                    if(!transparent_background&&-1!=run_start_bg) {
-                                        r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip);
-                                        run_start_bg=-1;
-                                    }
-                                    if(-1==run_start_fg)
-                                        run_start_fg=n;
-                                    //r=point(destination,spoint16(chr.left()+n,chr.top()+j),color,clip);
-                                } else {
-                                    if(-1!=run_start_fg) {
-                                        r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
-                                        run_start_fg=-1;
-                                    }
-                                    if(!transparent_background) {
-                                        if(-1==run_start_bg)
-                                            run_start_bg=n;
-                                    }
-                                }
-
-                                accum<<=1;
-                            }
-                            if(-1!=run_start_fg) {
-                                //r=filled_rectangle(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
-                                for(int k=run_start_fg;k<fc.width()-1;++k) {
-                                    r=point(destination,spoint16(k+chr.left(),j+chr.top()),color,clip);
-                                    if(gfx_result::success!=r)
-                                        return r;
-                                }
-                            }
-                            if(!transparent_background&&-1!=run_start_bg) {
-                                //r=filled_rectangle(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
-                                for(int k=run_start_bg;k<fc.width()-1;++k) {
-                                    r=point(destination,spoint16(k+chr.left(),j+chr.top()),color,clip);
-                                    if(gfx_result::success!=r)
-                                        return r;
-                                }
-                            }
-                        }
+                        r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+                        if(gfx_result::success!=r)
+                            return r;
                         chr=chr.offset(fc.width(),0);
                         ++sz;
                         if(*sz) {

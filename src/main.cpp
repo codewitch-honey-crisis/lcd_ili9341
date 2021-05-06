@@ -140,11 +140,11 @@ void scroll_text_demo() {
         }
 
         text_rect=text_rect.offset(1,0);
-        draw::text(lcd,text_rect,text,f,lcd_color::white);
+        draw::text(lcd,text_rect,text,f,lcd_color::white,lcd_color::black,false);
        // draw::line(lcd,text_rect.inflate(-(text_rect.width()/2),-(text_rect.height()/2)),lcd_color::white);
         if(text_rect.x2>=320)
         {
-            draw::text(lcd,text_rect.offset(-320,0),text,f,lcd_color::white);
+            draw::text(lcd,text_rect.offset(-320,0),text,f,lcd_color::white,lcd_color::black,false);
         //    draw::line(lcd,text_rect.offset(-320,0).inflate(-(text_rect.width()/2),-(text_rect.height()/2)),lcd_color::white);
         }
         if(text_rect.x1>=320) {
@@ -163,7 +163,7 @@ void app_main(void)
         printf("SPI host initialization error.\r\n");
         abort();
     }
-    //scroll_text_demo();
+    scroll_text_demo();
     // mount SPIFFS
     esp_err_t ret;
     esp_vfs_spiffs_conf_t conf = {};
