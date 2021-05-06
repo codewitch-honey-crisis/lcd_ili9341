@@ -57,7 +57,8 @@ namespace espidf {
             io_pending=5
         };
     private:
-        spi_transaction_t m_trans[max_transactions];
+        // we keep a sentinel
+        spi_transaction_t m_trans[max_transactions+1];
         uint8_t m_buffer[buffer_size];
         bool m_initialized;
         size_t m_next_transaction;
@@ -207,7 +208,7 @@ namespace espidf {
                 m_batch_left=0;
                 batch_committed=true;
             }
-            
+            // now actually send the transaction
             if(queued) {
                 r=ensure_free_transaction();
                 if(result::success!=r)
@@ -240,9 +241,7 @@ namespace espidf {
             if(m_batch_left==0)  {
                 return result::success;
             }
-            // for some reason this trans struct seems to get corrupted
-            // so we just rewrite the whole thing
-            result r = send_next_data(m_buffer,m_batch_left*2,queued);
+           result r = send_next_data(m_buffer,m_batch_left*2,queued);
             if(result::success!=r)
                 return r;
             m_batch_left=0;
@@ -403,8 +402,14 @@ namespace espidf {
                 return r;
             return send_next_data(bmp_data,(x2-x1+1)*(y2-y1+1)*2,false,true);
         }
-        // queues a frame write operation. The bitmap data must be valid for the duration of the operation (until queued_wait())
-        result queued_frame_write(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint8_t* bmp_data,bool precommit=false) {
+        // queues a frame write operation. The bitmap data must be valid 
+        // for the duration of the operation (until queued_wait())
+        result queued_frame_write(uint16_t x1,
+                                uint16_t y1, 
+                                uint16_t x2, 
+                                uint16_t y2,
+                                uint8_t* bmp_data,
+                                bool preflush=false) {
             // normalize values
             uint16_t tmp;
             if(x1>x2) {
@@ -420,27 +425,37 @@ namespace espidf {
             if(x1>=width || y1>=height)
                 return result::success;
             result r;
-            if(precommit) {
-                // flush any pending batches or transactions if necessary:
+            if(preflush) {
+                // flush any pending batches or 
+                // transactions if necessary:
                 r=batch_write_commit_impl(true);
                 if(result::success!=r) {
                     return r;
                 }
+                r=queued_wait();
+                if(result::success!=r)
+                    return r;
             }
+            // set the address window - we don't actually do a batch
+            // here, but we use this for our own purposes
             r=batch_write_begin_impl(x1,y1,x2,y2,true);
             if(result::success!=r)
                 return r;
             
-            r=send_next_data(bmp_data,(x2-x1+1)*(y2-y1+1)*2,true,false);
+            r=send_next_data(bmp_data,
+                            (x2-x1+1)*(y2-y1+1)*2,
+                            true);
             
-            //When we are here, the SPI driver is busy (in the background) getting the transactions sent. That happens
-            //mostly using DMA, so the CPU doesn't have much to do here. We're not going to wait for the transaction to
-            //finish because we may as well spend the time calculating the draw. When that is done, we can call
-            //queued_wait(), which will wait for the transfers to be don.
+            // When we are here, the SPI driver is busy (in the background) 
+            // getting the transactions sent. That happens mostly using DMA, 
+            // so the CPU doesn't have much to do here. We're not going to 
+            // wait for the transaction to finish because we may as well spend
+            // the time doing something else. When that is done, we can call
+            // queued_wait(), which will wait for the transfers to be done.
             // otherwise, the transactions will be queued as the old ones finish
-            return r;    
+            return r;  
         }
-// fills the target rectangle of the frame buffer with a pixel
+        // fills the target rectangle of the frame buffer with a pixel
         result frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
             // normalize values
             uint16_t tmp;
