@@ -120,7 +120,7 @@ using lcd_type = ili9341<LCD_HOST,
                         PIN_NUM_CS,
                         PIN_NUM_DC,
                         PIN_NUM_RST,
-                        PIN_NUM_BCKL>;
+                        PIN_NUM_BCKL,64>;
 
 lcd_type lcd;
 
@@ -205,6 +205,9 @@ static void display_pretty_colors()
         for (int y=0; y<240; y+=PARALLEL_LINES) {
             //Calculate a line.
             pretty_effect_calc_lines(lines[calc_line], y, frame, PARALLEL_LINES);
+            // wait for the last frame to finish. Don't need this unless transactions are > 7
+            if(-1!=sending_line)
+                lcd.queued_wait();
             //Swap sending_line and calc_line
             sending_line=calc_line;
             calc_line=(calc_line==1)?0:1;
@@ -218,9 +221,11 @@ static void display_pretty_colors()
             //touch lines[sending_line] or the bitmap for it; 
             // the SPI sending process is still reading from that.
         }
+        
         if(0==frame%50) {
             using lcd_color = color<rgb_pixel<16>>;
             int pid = (frame/50)%3;
+            
             if(pid==1) {
                 for(int i=0;i<60;++i) {
                     srect16 sr(spoint16(rand()%lcd_type::width,rand()%lcd_type::height),rand()%(lcd_type::width/4));
@@ -251,6 +256,7 @@ static void display_pretty_colors()
                     
                 }
             }
+            
             file_stream fs((0==pid)?"/spiffs/image.jpg":(1==pid)?"/spiffs/image2.jpg":"/spiffs/image3.jpg");
             gfx::jpeg_image::load(&fs,[](const typename gfx::jpeg_image::region_type& region,gfx::point16 location,void* state) {
                 uint16_t** out = (uint16_t**)state;

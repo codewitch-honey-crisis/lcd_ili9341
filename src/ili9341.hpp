@@ -56,14 +56,11 @@ namespace espidf {
             io_pending=5
         };
     private:
-        // we keep a sentinel
-        spi_transaction_t m_trans[max_transactions+1];
         uint8_t m_buffer[buffer_size];
         bool m_initialized;
-        size_t m_next_transaction;
         size_t m_batch_left;
-        size_t m_queued_transactions;
         spi_device m_spi;
+        spi_device_manager<max_transactions,timeout> m_spi_mgr;
         // address window caching
         uint16_t m_batch_x1;
         uint16_t m_batch_y1;
@@ -119,127 +116,37 @@ namespace espidf {
             }
             return result::success;
         }
-        result ensure_free_transaction() {
+       
+        result commit_batch_internal(bool queued) {
             spi_result rr;
-            // free up a transaction if necessary
-            if(m_queued_transactions>=max_transactions-1) {
-                spi_transaction_t *rtrans;
-                rr=m_spi.get_next_queued_result(&rtrans);
-                if(spi_result::success!=rr) {
-                    return xlt_err(rr);
-                }
-                --m_queued_transactions;
-            }
-            if(rr!=spi_result::success)
+            rr=m_spi_mgr.write(m_buffer,m_batch_left*2,(void*)1,(queued)?spi_transaction_type::queued:spi_transaction_type::polling);
+            if(spi_result::success!=rr)
                 return xlt_err(rr);
-            return result::success;
-        }
-        result commit_batch_internal(spi_transaction_t* tmp,bool queued) {
-            spi_result rr;
-            if(!queued) {
-                spi_device::make_write(tmp,m_buffer,m_batch_left*2);
-                rr=m_spi.transaction(tmp,true);
-                if(spi_result::success!=rr) {
-                    return xlt_err(rr);
-                }
-            } else {
-                result r=ensure_free_transaction();
-                if(result::success!=r)
-                    return r;
-                spi_device::make_write(tmp,m_buffer,m_batch_left*2);
-                rr=m_spi.queue_transaction(tmp,timeout);
-                if(spi_result::success!=rr) {
-                    return xlt_err(rr);
-                }
-                ++m_queued_transactions;
-            }
             m_batch_left=0;
             return result::success;
         }
-        result send_transaction(spi_transaction_t* trans,bool queued,bool skip_batch_commit=false) {
-            // initialize the display if necessary
-            result r = initialize();
-            if(result::success!=r)
-                return r;
+        result send_next_internal(const uint8_t* data,size_t size,bool queued,bool user,bool skip_batch_commit) {
+            if(!initialized()) {
+                result r = initialize();
+                if(result::success!=r)
+                    return r;
+            }
             spi_result rr;
-            spi_transaction_t tmp;
-            // if we're not queuing but there are queued transactions currently
-            // we have to flush everyhing:
-            bool batch_committed=false;
-            if(!queued && 0!=m_queued_transactions) {
-                // commit the batch if we have to
-                if(!skip_batch_commit && 0!=m_batch_left) {
-                    r=commit_batch_internal(&tmp,true);
-                    if(result::success!=r)
-                        return r;
-                    batch_committed=true;
-                    // wait for everything to complete
-                    if(0!=m_queued_transactions)
-                        r= queued_wait();
-                } else {
-                    // wait for everything to complete
-                    r=queued_wait();
-                }
+            if(!skip_batch_commit&&m_batch_left!=0) {
+                result r=commit_batch_internal(queued);
                 if(result::success!=r)
                     return r;
-                
-            } 
-            // commit the batch if necessary and we haven't already
-            if(!batch_committed && !skip_batch_commit&&0!=m_batch_left) {
-                if(!queued) {
-                    r=commit_batch_internal(&tmp,false);
-                    if(result::success!=r)
-                        return r;
-                } else {
-                    // HACK: We can't use tmp here because
-                    // the transaction won't complete immediately
-                    // so what we have to do is forcibly open
-                    // a new slot in m_trans, move the current
-                    // *trans to the new slot, and then replace
-                    // *the current slot* with the batch commit
-                    r=ensure_free_transaction();
-                    if(result::success!=r)
-                        return r;
-                    size_t next_free = (m_queued_transactions+1)%max_transactions;
-                    memcpy(&m_trans[next_free],trans,sizeof(spi_transaction_t));
-                    r=commit_batch_internal(trans,true);
-                    if(result::success!=r) {
-                        return r;
-                    }
-                    trans = &m_trans[next_free];
-                    m_batch_left=0;
-                }
-                m_batch_left=0;
-                batch_committed=true;
             }
-            // now actually send the transaction
-            if(queued) {
-                r=ensure_free_transaction();
-                if(result::success!=r)
-                    return r;
-                rr = m_spi.queue_transaction(trans,timeout);
-            } else {
-                rr = m_spi.transaction(trans,true);
-            }
-            if(spi_result::success!=rr) {
+            rr = m_spi_mgr.write(data,size,(void*)user,(queued)?spi_transaction_type::queued:spi_transaction_type::polling);
+            if(spi_result::success!=rr)
                 return xlt_err(rr);
-            }
-            if(queued)
-                ++m_queued_transactions;
             return result::success;
         }
-        
-        result send_next_command(uint8_t cmd,bool queued,bool skip_batch_commit=false) {
-            spi_transaction_t* ptrans = &m_trans[m_next_transaction];
-            m_next_transaction=(m_next_transaction+1)%max_transactions;
-            spi_device::make_write(ptrans,&cmd,1,(void*)0);
-            return send_transaction(ptrans,queued,skip_batch_commit);
+        inline result send_next_command(uint8_t cmd,bool queued,bool skip_batch_commit=false) {
+            return send_next_internal(&cmd,1,queued,false,skip_batch_commit);
         }
-        result send_next_data(const uint8_t* data,size_t size,bool queued,bool skip_batch_commit=false) {
-            spi_transaction_t* ptrans = &m_trans[m_next_transaction];
-            m_next_transaction=(m_next_transaction+1)%max_transactions;
-            spi_device::make_write(ptrans,data,size,(void*)1);
-            return send_transaction(ptrans,queued,skip_batch_commit);
+        inline result send_next_data(const uint8_t* data,size_t size,bool queued,bool skip_batch_commit=false) {
+            return send_next_internal(data,size,queued,true,skip_batch_commit);
         }
         result batch_write_commit_impl(bool queued) {
             if(m_batch_left==0)  {
@@ -402,10 +309,9 @@ namespace espidf {
         // constructs a new instance of the driver
         ili9341(result* out_result = nullptr) : 
             m_initialized(false),
-            m_next_transaction(0),
             m_batch_left(0),
-            m_queued_transactions(0),
             m_spi(host_id,get_device_config()),
+            m_spi_mgr(m_spi),
             m_batch_x1(uint16_t(-1)),
             m_batch_y1(uint16_t(-1)),
             m_batch_x2(uint16_t(-1)),
@@ -587,13 +493,9 @@ namespace espidf {
         // waits for all pending queued operations
         result queued_wait()
         {
-            spi_transaction_t *rtrans;
-            //Wait for all of the transactions to be done and get back the results.
-            for (;m_queued_transactions>0; --m_queued_transactions) {
-                if(spi_result::success!=m_spi.get_next_queued_result(&rtrans))
-                    return result::io_error;
-                //We could inspect rtrans now if we received any info back. The LCD is treated as write-only, though.
-            }
+            spi_result rr = m_spi_mgr.wait_all();
+            if(spi_result::success!=rr)
+                return xlt_err(rr);
             return result::success;
         }
         
@@ -800,7 +702,7 @@ namespace espidf {
         }
         // waits for all pending asynchronous operations to complete
         gfx::gfx_result wait_async() {
-            result r = batch_write_commit_impl(m_queued_transactions!=0);
+            result r = batch_write_commit_impl(m_spi_mgr.has_queued_transactions());
             if(result::success!=r)
                 return xlt_err(r);
             r=queued_wait();

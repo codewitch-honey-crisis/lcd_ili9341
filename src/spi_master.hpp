@@ -97,11 +97,12 @@ namespace espidf {
     };
     class spi_device final {
         spi_device_handle_t m_handle;
+        size_t m_max_transactions;
         spi_device(const spi_device& rhs)=delete;
         spi_device& operator=(const spi_device& rhs)=delete;
     public:
         spi_device(spi_host_device_t host_id,const spi_device_interface_config_t& config,spi_result* out_result=nullptr) : m_handle(nullptr) {
-            
+            m_max_transactions = config.queue_size;
             esp_err_t res = spi_bus_add_device(host_id,&config,&m_handle);
             if(ESP_OK==res) {
                 if(nullptr!=out_result) {
@@ -146,6 +147,9 @@ namespace espidf {
         }
         inline bool initialized() const {
             return nullptr!=m_handle;
+        }
+        inline size_t max_transactions() const {
+            return m_max_transactions;
         }
         static void make_read(spi_transaction_t* trans, uint8_t* data, size_t size,void* user = nullptr) {
             trans->addr = 0;
@@ -275,6 +279,77 @@ namespace espidf {
                 }
             }
             return spi_result::success;
+        }
+    };
+    enum struct spi_transaction_type {
+        any = 0,
+        polling = 1,
+        interrupt = 2,
+        queued = 3
+    };
+    template<size_t MaxTransactions=7,TickType_t Timeout = portMAX_DELAY>
+    struct spi_device_manager final {
+        
+    private:
+        constexpr static const size_t max_transactions = MaxTransactions;
+        constexpr static const TickType_t timeout = Timeout;
+        spi_device& m_device;
+        spi_transaction_t m_queued_transactions[MaxTransactions];
+        size_t m_queue_head;
+        size_t m_queue_tail;
+    public:
+        spi_device_manager(spi_device& device) : m_device(device) {
+        }
+        inline bool has_queued_transactions() const {
+            return m_queue_head!=m_queue_tail;
+        }
+        spi_result wait_one() {
+            spi_result r;
+            spi_transaction_t* ptrans;
+            if(m_queue_head!=m_queue_tail){
+                r=m_device.get_next_queued_result(&ptrans);
+                if(spi_result::success!=r)
+                    return r;
+                m_queue_head=(m_queue_head+1)%max_transactions;    
+            }
+            return spi_result::success;
+        }
+        spi_result wait_all() {
+            spi_result r;
+            spi_transaction_t* ptrans;
+            while(m_queue_tail!=m_queue_head) {
+                r=m_device.get_next_queued_result(&ptrans);
+                if(spi_result::success!=r)
+                    return r;
+                m_queue_head=(m_queue_head+1)%max_transactions;    
+            }
+            return spi_result::success;
+        }
+        spi_result ensure_free_queue() {
+            if(m_queue_head==(m_queue_tail+1)%max_transactions) {
+                return wait_one();
+            }
+            return spi_result::success;
+        }
+        spi_result write(const uint8_t* data, size_t size,void* user,spi_transaction_type type=spi_transaction_type::polling) {
+            spi_result r;
+            if(type==spi_transaction_type::polling) {
+                spi_transaction_t t;
+                spi_device::make_write(&t,data,size,user);
+                return m_device.transaction(&t,true);
+            } else if(type==spi_transaction_type::interrupt) {
+                spi_transaction_t t;
+                spi_device::make_write(&t,data,size,user);
+                return m_device.transaction(&t,false);
+            }
+            spi_transaction_t* ptrans;
+            r=ensure_free_queue();
+            if(spi_result::success!=r)
+                return r;
+            ptrans = &m_queued_transactions[m_queue_tail];
+            m_queue_tail=(m_queue_tail+1)%max_transactions;
+            spi_device::make_write(ptrans,data,size,user);
+            return m_device.queue_transaction(ptrans,timeout);
         }
     };
 }
