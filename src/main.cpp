@@ -158,7 +158,7 @@ static void display_pretty_colors()
         }
         if(0==frame%50) {
             using lcd_color = color<rgb_pixel<16>>;
-            for(int i = 1;i<240;++i) {
+            for(int i = 1;i<120;++i) {
                 draw::line(lcd,srect16(0,i*(lcd_type::height/240.0),lcd_type::width-1,i*(lcd_type::height/240.0)),lcd_color::black);
                 draw::line(lcd,srect16(i*(lcd_type::width/240.0),0,i*(lcd_type::width/240.0),lcd_type::height-1),lcd_color::black);
                 //draw::line(lcd,srect16(0,i*(lcd_type::height/100.0),i*(lcd_type::width/100.0),lcd_type::height-1),lcd_color::black);
