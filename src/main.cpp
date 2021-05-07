@@ -1,4 +1,3 @@
-  
 extern "C" { void app_main(); }
 
 #include <stdio.h>
@@ -12,21 +11,24 @@ extern "C" { void app_main(); }
 #include "ili9341.hpp"
 #include "pretty_effect.hpp"
 #include "gfx_drawing.hpp"
+#include "gfx_image.hpp"
+#include "stream.hpp"
 #include "gfx_color_cpp14.hpp"
 #include "../fonts/Bm437_Acer_VGA_8x8.h"
 #include "../fonts/Bm437_ACM_VGA_9x16.h"
 #include "../fonts/Bm437_ATI_9x16.h"
-#include "soc/rtc_wdt.h"
-
 using namespace espidf;
+using namespace io;
 using namespace gfx;
 
 // the following is configured for the ESP-WROVER-KIT
 // make sure to set the pins to your set up.
 #ifdef CONFIG_IDF_TARGET_ESP32
+#if defined(ESP_WROVER_KIT)
+#define LCD_ILI9341
+#define PARALLEL_LINES 16
 #define LCD_HOST    HSPI_HOST
 #define DMA_CHAN    2
-
 #define PIN_NUM_MISO GPIO_NUM_25
 #define PIN_NUM_MOSI GPIO_NUM_23
 #define PIN_NUM_CLK  GPIO_NUM_19
@@ -35,7 +37,39 @@ using namespace gfx;
 #define PIN_NUM_DC   GPIO_NUM_21
 #define PIN_NUM_RST  GPIO_NUM_18
 #define PIN_NUM_BCKL GPIO_NUM_5
+#elif defined(ESP32_TTGO)
+#define LCD_ST7789
+#define LCD_WIDTH 240
+#define LCD_HEIGHT 135
+#define PARALLEL_LINES 16
+#define LCD_HOST    HSPI_HOST
+#define DMA_CHAN    2
+#define PIN_NUM_MISO GPIO_NUM_NC
+#define PIN_NUM_MOSI GPIO_NUM_19
+#define PIN_NUM_CLK  GPIO_NUM_18
+#define PIN_NUM_CS   GPIO_NUM_5
+
+#define PIN_NUM_DC   GPIO_NUM_16
+#define PIN_NUM_RST  GPIO_NUM_NC
+#define PIN_NUM_BCKL GPIO_NUM_4
+#else
+#define LCD_ILI9341
+#define PARALLEL_LINES 16
+#define LCD_HOST    HSPI_HOST
+#define DMA_CHAN    2
+#define PIN_NUM_MISO GPIO_NUM_25
+#define PIN_NUM_MOSI GPIO_NUM_23
+#define PIN_NUM_CLK  GPIO_NUM_19
+#define PIN_NUM_CS   GPIO_NUM_22
+
+#define PIN_NUM_DC   GPIO_NUM_21
+#define PIN_NUM_RST  GPIO_NUM_18
+#define PIN_NUM_BCKL GPIO_NUM_5
+#endif
+
 #elif defined CONFIG_IDF_TARGET_ESP32S2
+#define LCD_ILI9341
+#define PARALLEL_LINES 16
 #define LCD_HOST    SPI2_HOST
 #define DMA_CHAN    LCD_HOST
 
@@ -48,6 +82,8 @@ using namespace gfx;
 #define PIN_NUM_RST  GPIO_NUM_5
 #define PIN_NUM_BCKL GPIO_NUM_6
 #elif defined CONFIG_IDF_TARGET_ESP32C3
+#define LCD_ILI9341
+#define PARALLEL_LINES 16
 #define LCD_HOST    SPI2_HOST
 #define DMA_CHAN    LCD_HOST
 
@@ -61,10 +97,8 @@ using namespace gfx;
 #define PIN_NUM_BCKL GPIO_NUM_19
 #endif
 
+
 // To speed up transfers, every SPI transfer sends as much data as possible. 
-// This define specifies how much. More means more memory use, but less 
-// overhead for setting up / finishing transfers.
-#define PARALLEL_LINES 16
 
 // configure the spi bus. Must be done before the driver
 spi_master spi_host(nullptr,
@@ -96,7 +130,7 @@ static void display_pretty_colors()
 {
     uint16_t *lines[2];
     //Allocate memory for the pixel buffers
-    for (int i=0; i<2; i+=2) {
+    for (int i=0; i<2; i++) {
         lines[i]=(uint16_t*)heap_caps_malloc(320*PARALLEL_LINES*sizeof(uint16_t), MALLOC_CAP_DMA);
         assert(lines[i]!=NULL);
     }
@@ -122,8 +156,41 @@ static void display_pretty_colors()
             //background. We can go on to calculate the next line set as long as we do not
             //touch line[sending_line]; the SPI sending process is still reading from that.
         }
+        if(0==frame%50) {
+            int pid = (frame/50)%3;
+            file_stream fs((0==pid)?"/spiffs/image.jpg":(1==pid)?"/spiffs/image2.jpg":"/spiffs/image3.jpg");
+            gfx::jpeg_image::load(&fs,[](const typename gfx::jpeg_image::region_type& region,gfx::point16 location,void* state) {
+                uint16_t** out = (uint16_t**)state;
+                // to go as fast as possible, we access the bmp
+                // as raw memory
+                uint8_t *in = region.begin();
+                gfx::rect16 r = region.bounds().offset(location.x,location.y);
+                gfx::point16 pt;
+                for (pt.y = r.y1; pt.y <= r.y2; ++pt.y) {
+                    for (pt.x = r.x1; pt.x <= r.x2; ++pt.x) {
+                        //We need to convert the 3 bytes in `in` to a rgb565 value.
+                        // we could use pixel<>.convert<> and it's almost as efficient
+                        // but it's actually more lines of code because we have to
+                        // convert to and from raw values
+                        // so we may as well just keep it raw
+                        
+                        uint16_t v = 0;
+                        v |= ((in[0] >> 3) <<  11);
+                        v |= ((in[1] >> 2) << 5);
+                        v |= ((in[2] >> 3) );
+                        //The LCD wants the 16-bit value in big-endian, so swap bytes
+                        v=gfx::helpers::order_guard(v);
+                        out[pt.y][pt.x] = v;
+                        in+=3;
+                    }
+                }
+                return true;
+
+            },pixels);
+        }
     }
 }
+
 using lcd_color = color<typename lcd_type::pixel_type>;
 // produced by request
 void scroll_text_demo() {
@@ -154,11 +221,12 @@ void scroll_text_demo() {
     }
 }
 void lines_demo() {
+    lcd.fill(lcd.bounds(),lcd_color::white);
     const font& f = Bm437_ATI_9x16_FON;
-    const char* text = "ESP32 Lines Demo";
+    const char* text = "ESP32 GFX Demo";
     srect16 text_rect = srect16(spoint16(0,0),f.measure_text((ssize16)lcd.dimensions(),text));
     text_rect=text_rect.offset((lcd_type::width-text_rect.width())/2,(lcd_type::height-text_rect.height())/2);
-    draw::text(lcd,text_rect,text,f,lcd_color::white);
+    draw::text(lcd,text_rect,text,f,lcd_color::dark_blue);
 
     for(int i = 1;i<100;++i) {
         draw::line(lcd,srect16(0,i*(lcd_type::height/100.0),i*(lcd_type::width/100.0),lcd_type::height-1),lcd_color::light_blue);
@@ -167,7 +235,7 @@ void lines_demo() {
         draw::line(lcd,srect16(lcd_type::width-1,i*(lcd_type::height/100.0),lcd_type::width-i*(lcd_type::width/100.0)-1,lcd_type::height-1),lcd_color::yellow);
         
     }
-    vTaskDelay(portMAX_DELAY);
+    //vTaskDelay(3000/portTICK_PERIOD_MS);
 }
 void app_main(void)
 {
@@ -176,8 +244,7 @@ void app_main(void)
         printf("SPI host initialization error.\r\n");
         abort();
     }
-    //lines_demo();
-    //scroll_text_demo();
+    lines_demo();
     // mount SPIFFS
     esp_err_t ret;
     esp_vfs_spiffs_conf_t conf = {};
@@ -191,9 +258,6 @@ void app_main(void)
     rr=pretty_effect_init();
     if(gfx_result::success!=rr) {
         printf("Error loading demo: %d\r\n",(int)rr);
-        vTaskDelay(portMAX_DELAY);
-    } else {
-        display_pretty_colors();
     }
-
+    display_pretty_colors();
 }

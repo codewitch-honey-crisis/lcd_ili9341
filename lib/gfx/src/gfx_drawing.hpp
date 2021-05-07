@@ -1112,25 +1112,29 @@ namespace gfx {
                         
                         break;
                     default:
-                        if(transparent_background)
-                            r=draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
-                        else
-                            r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
-                        if(gfx_result::success!=r)
-                            return r;
-                        chr=chr.offset(fc.width(),0);
-                        ++sz;
-                        if(*sz) {
-                            font_char nfc = font[*sz];
-                            chr.x2=chr.x1+nfc.width()-1;
-                            if(chr.right()>dest_rect.right()) {
-                                
-                                chr.x1=dest_rect.x1;
-                                chr=chr.offset(0,font.height());
+                        if(nullptr==clip || clip->intersects(chr)) {
+                            if(chr.intersects(dest_rect)) {
+                                if(transparent_background)
+                                    r=draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+                                else
+                                    r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
+                                if(gfx_result::success!=r)
+                                    return r;
+                                chr=chr.offset(fc.width(),0);
+                                ++sz;
+                                if(*sz) {
+                                    font_char nfc = font[*sz];
+                                    chr.x2=chr.x1+nfc.width()-1;
+                                    if(chr.right()>dest_rect.right()) {
+                                        
+                                        chr.x1=dest_rect.x1;
+                                        chr=chr.offset(0,font.height());
+                                    }
+                                    if(chr.y2>dest_rect.bottom())
+                                        return gfx_result::success;
+                                    fc=nfc;
+                                }
                             }
-                            if(chr.y2>dest_rect.bottom())
-                                return gfx_result::success;
-                            fc=nfc;
                         }
                         break;
                 }
