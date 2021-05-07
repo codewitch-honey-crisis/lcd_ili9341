@@ -840,7 +840,8 @@ namespace gfx {
             rect16 ur;
             if(nullptr==clip) {
                 
-                if(translate_adjust(rect,&ur)) {
+                if(((srect16)destination.bounds()).intersects(rect)) {
+                    ur=(rect16)rect.crop((srect16)destination.bounds());
                     r=destination.fill(ur,color);
                     if(r!=gfx_result::success)
                         return r;

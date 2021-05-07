@@ -340,9 +340,9 @@ namespace espidf {
             uint16_t w = x2-x1+1;
             uint16_t h = y2-y1+1;
             result r;
-            if(w==1&&w==1) {
+            /*if(w==1&&h==1) {
                 return pixel_write_impl(x1,y1,color,queued);
-            }
+            }*/
             r=batch_write_begin_impl(x1,y1,x2,y2,queued);
             if(result::success!=r)
                 return r;

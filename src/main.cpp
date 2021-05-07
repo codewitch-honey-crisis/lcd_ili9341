@@ -157,6 +157,18 @@ static void display_pretty_colors()
             //touch line[sending_line]; the SPI sending process is still reading from that.
         }
         if(0==frame%50) {
+            using lcd_color = color<rgb_pixel<16>>;
+            for(int i = 1;i<240;++i) {
+                draw::line(lcd,srect16(0,i*(lcd_type::height/240.0),lcd_type::width-1,i*(lcd_type::height/240.0)),lcd_color::black);
+                draw::line(lcd,srect16(i*(lcd_type::width/240.0),0,i*(lcd_type::width/240.0),lcd_type::height-1),lcd_color::black);
+                //draw::line(lcd,srect16(0,i*(lcd_type::height/100.0),i*(lcd_type::width/100.0),lcd_type::height-1),lcd_color::black);
+                //draw::line(lcd,srect16(lcd_type::width-i*(lcd_type::width/100.0)-1,0,lcd_type::width-1,lcd_type::height-i*(lcd_type::height/100.0)-1),lcd_color::black);
+                //draw::line(lcd,srect16(0,lcd_type::height-i*(lcd_type::height/100.0),i*(lcd_type::width/100.0)-1,0),lcd_color::black);
+                //draw::line(lcd,srect16(lcd_type::width-1,i*(lcd_type::height/100.0),lcd_type::width-i*(lcd_type::width/100.0)-1,lcd_type::height-1),lcd_color::black);
+                draw::line(lcd,srect16(lcd_type::width-i*(lcd_type::width/240.0)-1,0,lcd_type::width-i*(lcd_type::width/240.0)-1,lcd_type::height-1),lcd_color::black);
+                draw::line(lcd,srect16(0,lcd_type::height-i*(lcd_type::height/240.0)-1,lcd_type::width-1,lcd_type::height-i*(lcd_type::height/240.0)-1),lcd_color::black);
+                
+            }
             int pid = (frame/50)%3;
             file_stream fs((0==pid)?"/spiffs/image.jpg":(1==pid)?"/spiffs/image2.jpg":"/spiffs/image3.jpg");
             gfx::jpeg_image::load(&fs,[](const typename gfx::jpeg_image::region_type& region,gfx::point16 location,void* state) {
