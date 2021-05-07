@@ -12,6 +12,7 @@ extern "C" { void app_main(); }
 #include "pretty_effect.hpp"
 #include "gfx_drawing.hpp"
 #include "gfx_image.hpp"
+#include "gfx_drawing.hpp"
 #include "stream.hpp"
 #include "gfx_color_cpp14.hpp"
 #include "../fonts/Bm437_Acer_VGA_8x8.h"
@@ -134,6 +135,12 @@ static void display_pretty_colors()
         lines[i]=(uint16_t*)heap_caps_malloc(320*PARALLEL_LINES*sizeof(uint16_t), MALLOC_CAP_DMA);
         assert(lines[i]!=NULL);
     }
+    using lines_bmp_type = bitmap<typename lcd_type::pixel_type>;
+    lines_bmp_type line_bmps[2] {
+        lines_bmp_type(size16(320,PARALLEL_LINES),lines[0]),
+        lines_bmp_type(size16(320,PARALLEL_LINES),lines[1])
+    };
+
     int frame=0;
     //Indexes of the line currently being sent to the LCD and the line we're calculating.
     int sending_line=-1;
@@ -151,7 +158,10 @@ static void display_pretty_colors()
             calc_line=(calc_line==1)?0:1;
             //Send the line we currently calculated.
             // queued_frame_write works better the larger the transfer size. Here ours is pretty big
-            lcd.queued_frame_write(0,y,lcd_type::width-1,y+PARALLEL_LINES-1,(uint8_t*)lines[sending_line]);
+            //lcd.queued_frame_write(0,y,lcd_type::width-1,y+PARALLEL_LINES-1,(uint8_t*)lines[sending_line]);
+            const lines_bmp_type& sending_bmp = line_bmps[sending_line];
+            rect16 src_bounds = sending_bmp.bounds();
+            draw::bitmap_async(lcd,(srect16)src_bounds.offset(0,y),sending_bmp,src_bounds);
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
             //touch line[sending_line]; the SPI sending process is still reading from that.
@@ -275,7 +285,7 @@ void app_main(void)
         printf("SPI host initialization error.\r\n");
         abort();
     }
-    lines_demo();
+   // lines_demo();
     // mount SPIFFS
     esp_err_t ret;
     esp_vfs_spiffs_conf_t conf = {};

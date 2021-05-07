@@ -491,6 +491,7 @@ namespace espidf {
                                 uint16_t y2,
                                 uint8_t* bmp_data,
                                 bool preflush=false) {
+            
             // normalize values
             uint16_t tmp;
             if(x1>x2) {
@@ -619,7 +620,7 @@ namespace espidf {
             }
         }
         template<typename Source>
-        gfx::gfx_result write_frame_impl(const gfx::rect16& src_rect,const Source& src,gfx::point16 location,bool async) {
+        gfx::gfx_result copy_from_impl(const gfx::rect16& src_rect,const Source& src,gfx::point16 location,bool async) {
             result r;
             gfx::rect16 srcr = src_rect.normalize().crop(src.bounds());
             gfx::rect16 dstr(location,src_rect.dimensions());
@@ -787,15 +788,15 @@ namespace espidf {
                 return xlt_err(r);
             return gfx::gfx_result::success;
         }
-        // writes source data to a frame
+        // copies source data to a frame
         template<typename Source>
-        inline gfx::gfx_result write_frame(const gfx::rect16& src_rect,const Source& src,gfx::point16 location) {
-            return write_frame_impl(src_rect,src,location,false);
+        inline gfx::gfx_result copy_from(const gfx::rect16& src_rect,const Source& src,gfx::point16 location) {
+            return copy_from_impl(src_rect,src,location,false);
         }
         // asynchronously writes source data to a frame
         template<typename Source>
-        inline gfx::gfx_result write_frame_async(const gfx::rect16& src_rect,const Source& src,gfx::point16 location) {
-            return write_frame_impl(src_rect,src,location,true);
+        inline gfx::gfx_result copy_from_async(const gfx::rect16& src_rect,const Source& src,gfx::point16 location) {
+            return copy_from_impl(src_rect,src,location,true);
         }
         // waits for all pending asynchronous operations to complete
         gfx::gfx_result wait_async() {
