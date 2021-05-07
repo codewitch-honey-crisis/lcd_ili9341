@@ -362,17 +362,25 @@ namespace espidf {
             if(w==1&&h==1) {
                 return pixel_write_impl(x1,y1,color,queued);
             }
+            spi_result sr = m_spi.acquire_bus(portMAX_DELAY);
+            if(spi_result::success!=sr)
+                return xlt_err(sr);
             r=batch_write_begin_impl(x1,y1,x2,y2,queued,false);
-            if(result::success!=r)
+            if(result::success!=r) {
+                m_spi.release_bus();
                 return r;
+            }
             size_t pc=w*h;
             while(pc>0) {
                 r=batch_write_impl(&color,1,queued);
-                if(result::success!=r)
+                if(result::success!=r) {
+                    m_spi.release_bus();
                     return r;
+                }
                 --pc;
             }
             r=batch_write_commit_impl(queued);
+            m_spi.release_bus();
             return r;           
         }
         result pixel_write_impl(uint16_t x,
