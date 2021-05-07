@@ -124,10 +124,9 @@ static void display_pretty_colors()
         }
     }
 }
-
+using lcd_color = color<typename lcd_type::pixel_type>;
 // produced by request
 void scroll_text_demo() {
-    using lcd_color = color<typename lcd_type::pixel_type>;
     lcd.clear(lcd.bounds());
     const font& f = Bm437_ATI_9x16_FON;
     const char* text = "Hello world!";
@@ -155,7 +154,13 @@ void scroll_text_demo() {
         //vTaskDelay(portMAX_DELAY);
     }
 }
-
+void lines_demo() {
+    for(int i = 1;i<100;i+=1) {
+        draw::line(lcd,srect16(0,i*(lcd_type::height/100.0),i*(lcd_type::width/100.0),lcd_type::height-1),lcd_color::light_blue);
+        draw::line(lcd,srect16(lcd_type::width-i*(lcd_type::width/100.0)-1,0,lcd_type::width-1,lcd_type::height-i*(lcd_type::height/100.0)-1),lcd_color::hot_pink);
+    }
+    //vTaskDelay(portMAX_DELAY);
+}
 void app_main(void)
 {
     // check to make sure SPI was initialized successfully
@@ -163,7 +168,8 @@ void app_main(void)
         printf("SPI host initialization error.\r\n");
         abort();
     }
-    scroll_text_demo();
+    //lines_demo();
+    //scroll_text_demo();
     // mount SPIFFS
     esp_err_t ret;
     esp_vfs_spiffs_conf_t conf = {};
