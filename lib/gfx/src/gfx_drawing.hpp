@@ -907,7 +907,7 @@ namespace gfx {
         };
         template<typename Destination>
         struct draw_font_batch_helper<Destination,true> {
-            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip) {
+            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip,bool async) {
                 // transparent_background is ignored for this routine
                 srect16 sr = srect16(chr);
                 if(nullptr!=clip)
@@ -916,7 +916,7 @@ namespace gfx {
                     return gfx_result::success;
                 rect16 dr = (rect16)sr.crop((srect16)destination.bounds());
                 
-                gfx_result r = destination.begin_batch(dr);
+                gfx_result r = (async)?destination.begin_batch_async(dr):destination.begin_batch(dr);
                 if(gfx_result::success!=r)
                     return r;
                 // draw the character
@@ -930,11 +930,11 @@ namespace gfx {
                     for(size_t n=0;n<=fc.width();++n) {
                         if(dr.intersects(point16(n+chr.left(),j+chr.top()))) {
                             if(accum&m) {
-                                r=destination.write_batch(color);
+                                r=(async)?destination.write_batch_async(color):destination.write_batch(color);
                                 if(gfx_result::success!=r)
                                     return r;
                             } else {
-                                r=destination.write_batch(backcolor);
+                                r=(async)?destination.write_batch_async(backcolor):destination.write_batch(backcolor);
                                 if(gfx_result::success!=r)
                                     return r;
                             }
@@ -942,13 +942,13 @@ namespace gfx {
                         accum<<=1;
                     }
                 }
-                r=destination.commit_batch();
+                r=(async)?destination.commit_batch_async():destination.commit_batch();
                 return r;
             }
         };
         template<typename Destination>
         struct draw_font_batch_helper<Destination,false> {
-            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip) {
+            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip,bool async) {
                 gfx_result r = gfx_result::success;
                 // draw the character
                 size_t wb = (fc.width()+7)/8;
@@ -963,14 +963,14 @@ namespace gfx {
                     for(size_t n=0;n<fc.width();++n) {
                         if(accum&m) {
                             if(!transparent_background&&-1!=run_start_bg) {
-                                r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip);
+                                r=(async)?line_async(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip):line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip);
                                 run_start_bg=-1;
                             }
                             if(-1==run_start_fg)
                                 run_start_fg=n;
                         } else {
                             if(-1!=run_start_fg) {
-                                r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
+                                r=(async)?line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip):line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
                                 run_start_fg=-1;
                             }
                             if(!transparent_background) {
@@ -982,10 +982,10 @@ namespace gfx {
                         accum<<=1;
                     }
                     if(-1!=run_start_fg) {
-                        r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
+                        r=(async)?line_async(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip):line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
                     }
                     if(!transparent_background&&-1!=run_start_bg) {
-                        r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
+                        r=(async)?line_async(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip):line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
                         
                     }
                 }
@@ -1156,6 +1156,100 @@ namespace gfx {
                 return r;
             return arc_impl(destination,srect16(spoint16(sr.x2-rw,sr.y2-rh),ssize16(rw+1,rh)).flip_all(),color,clip,true,async);
         }
+        // draws text to the specified destination rectangle with the specified font and colors and optional clipping rectangle
+        template<typename Destination>
+        static gfx_result text_impl(
+            Destination& destination,
+            const srect16& dest_rect,
+            const char* text,
+            const font& font,
+            typename Destination::pixel_type color,
+            typename Destination::pixel_type backcolor,
+            bool transparent_background,
+            unsigned int tab_width,
+            srect16* clip,
+            bool async) {
+            gfx_result r=gfx_result::success;
+            if(nullptr==text)
+                return gfx_result::invalid_argument;
+            const char*sz=text;
+            int cw;
+            uint16_t rw;
+            srect16 chr(dest_rect.top_left(),ssize16(font.width(*sz),font.height()));
+            if(0==*sz) return gfx_result::success;
+            font_char fc = font[*sz];
+            while(*sz) {
+                switch(*sz) {
+                    case '\r':
+                        chr.x1=dest_rect.x1;
+                        ++sz;
+                        if(*sz) {
+                            font_char nfc = font[*sz];
+                            chr.x2=chr.x1+nfc.width()-1;
+                            fc=nfc;
+                        }  
+                        break;
+                    case '\n':
+                        chr.x1=dest_rect.x1;
+                        ++sz;
+                        if(*sz) {
+                            font_char nfc = font[*sz];
+                            chr.x2=chr.x1+nfc.width()-1;
+                            fc=nfc;
+                        }
+                        chr=chr.offset(0,font.height());
+                        if(chr.y2>dest_rect.bottom())
+                            return gfx_result::success;
+                        break;
+                    case '\t':
+                        ++sz;
+                        if(*sz) {
+                            font_char nfc = font[*sz];
+                            rw=chr.x1+nfc.width()-1;
+                            fc=nfc;
+                        } else
+                            rw=chr.width();
+                        cw = font.average_width()*4;
+                        chr.x1=((chr.x1/cw)+1)*cw;
+                        chr.x2=chr.x1+rw-1;
+                        if(chr.right()>dest_rect.right()) {
+                            chr.x1=dest_rect.x1;
+                            chr=chr.offset(0,font.height());
+                        } 
+                        if(chr.y2>dest_rect.bottom())
+                            return gfx_result::success;
+                        
+                        break;
+                    default:
+                        if(nullptr==clip || clip->intersects(chr)) {
+                            if(chr.intersects(dest_rect)) {
+                                if(transparent_background)
+                                    r=draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip,async);
+                                else
+                                    r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip,async);
+                                if(gfx_result::success!=r)
+                                    return r;
+                                chr=chr.offset(fc.width(),0);
+                                ++sz;
+                                if(*sz) {
+                                    font_char nfc = font[*sz];
+                                    chr.x2=chr.x1+nfc.width()-1;
+                                    if(chr.right()>dest_rect.right()) {
+                                        
+                                        chr.x1=dest_rect.x1;
+                                        chr=chr.offset(0,font.height());
+                                    }
+                                    if(chr.y2>dest_rect.bottom())
+                                        return gfx_result::success;
+                                    fc=nfc;
+                                }
+                            }
+                        }
+                        break;
+                }
+            }
+            return gfx_result::success;
+        }
     public:
         // draws a point at the specified location and of the specified color, with an optional clipping rectangle
         template<typename Destination>
@@ -1271,7 +1365,7 @@ namespace gfx {
         }        
         // draws text to the specified destination rectangle with the specified font and colors and optional clipping rectangle
         template<typename Destination>
-        static gfx_result text(
+        inline static gfx_result text(
             Destination& destination,
             const srect16& dest_rect,
             const char* text,
@@ -1281,86 +1375,21 @@ namespace gfx {
             bool transparent_background = true,
             unsigned int tab_width=4,
             srect16* clip=nullptr) {
-            gfx_result r=gfx_result::success;
-            if(nullptr==text)
-                return gfx_result::invalid_argument;
-            const char*sz=text;
-            int cw;
-            uint16_t rw;
-            srect16 chr(dest_rect.top_left(),ssize16(font.width(*sz),font.height()));
-            if(0==*sz) return gfx_result::success;
-            font_char fc = font[*sz];
-            while(*sz) {
-                switch(*sz) {
-                    case '\r':
-                        chr.x1=dest_rect.x1;
-                        ++sz;
-                        if(*sz) {
-                            font_char nfc = font[*sz];
-                            chr.x2=chr.x1+nfc.width()-1;
-                            fc=nfc;
-                        }  
-                        break;
-                    case '\n':
-                        chr.x1=dest_rect.x1;
-                        ++sz;
-                        if(*sz) {
-                            font_char nfc = font[*sz];
-                            chr.x2=chr.x1+nfc.width()-1;
-                            fc=nfc;
-                        }
-                        chr=chr.offset(0,font.height());
-                        if(chr.y2>dest_rect.bottom())
-                            return gfx_result::success;
-                        break;
-                    case '\t':
-                        ++sz;
-                        if(*sz) {
-                            font_char nfc = font[*sz];
-                            rw=chr.x1+nfc.width()-1;
-                            fc=nfc;
-                        } else
-                            rw=chr.width();
-                        cw = font.average_width()*4;
-                        chr.x1=((chr.x1/cw)+1)*cw;
-                        chr.x2=chr.x1+rw-1;
-                        if(chr.right()>dest_rect.right()) {
-                            chr.x1=dest_rect.x1;
-                            chr=chr.offset(0,font.height());
-                        } 
-                        if(chr.y2>dest_rect.bottom())
-                            return gfx_result::success;
-                        
-                        break;
-                    default:
-                        if(nullptr==clip || clip->intersects(chr)) {
-                            if(chr.intersects(dest_rect)) {
-                                if(transparent_background)
-                                    r=draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
-                                else
-                                    r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip);
-                                if(gfx_result::success!=r)
-                                    return r;
-                                chr=chr.offset(fc.width(),0);
-                                ++sz;
-                                if(*sz) {
-                                    font_char nfc = font[*sz];
-                                    chr.x2=chr.x1+nfc.width()-1;
-                                    if(chr.right()>dest_rect.right()) {
-                                        
-                                        chr.x1=dest_rect.x1;
-                                        chr=chr.offset(0,font.height());
-                                    }
-                                    if(chr.y2>dest_rect.bottom())
-                                        return gfx_result::success;
-                                    fc=nfc;
-                                }
-                            }
-                        }
-                        break;
-                }
-            }
-            return gfx_result::success;
+            return text_impl(destination,dest_rect,text,font,color,backcolor,transparent_background,tab_width,clip,false);
+        }
+        // asynchronously draws text to the specified destination rectangle with the specified font and colors and optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result text_async(
+            Destination& destination,
+            const srect16& dest_rect,
+            const char* text,
+            const font& font,
+            typename Destination::pixel_type color,
+            typename Destination::pixel_type backcolor=::gfx::rgb_pixel<3>(0,0,0).convert<typename Destination::pixel_type>(),
+            bool transparent_background = true,
+            unsigned int tab_width=4,
+            srect16* clip=nullptr) {
+            return text_impl(destination,dest_rect,text,font,color,backcolor,transparent_background,tab_width,clip,true);
         }
         // waits for all asynchronous operations on the destination to complete
         template<typename Destination>
