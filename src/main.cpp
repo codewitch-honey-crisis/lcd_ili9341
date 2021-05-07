@@ -124,6 +124,55 @@ using lcd_type = ili9341<LCD_HOST,
 
 lcd_type lcd;
 
+using lcd_color = color<typename lcd_type::pixel_type>;
+// produced by request
+void scroll_text_demo() {
+    lcd.clear(lcd.bounds());
+    const font& f = Bm437_ATI_9x16_FON;
+    const char* text = "copyright (C) 2021\r\nby honey the codewitch";
+    ssize16 text_size = f.measure_text((ssize16)lcd.dimensions(),text);
+    srect16 text_rect = srect16(spoint16((lcd_type::width-text_size.width)/2,(lcd_type::height-text_size.height)/2),text_size);
+    int16_t text_start = text_rect.x1;
+    bool first=true;
+    while(true) {
+        draw::filled_rectangle(lcd,text_rect,lcd_color::black);
+        if(text_rect.x2>=320) {
+            draw::filled_rectangle(lcd,text_rect.offset(-320,0),lcd_color::black);
+        }
+
+        text_rect=text_rect.offset(2,0);
+        draw::text(lcd,text_rect,text,f,lcd_color::old_lace,lcd_color::black,false);
+        if(text_rect.x2>=320){
+            draw::text(lcd,text_rect.offset(-320,0),text,f,lcd_color::old_lace,lcd_color::black,false);
+        }
+        if(text_rect.x1>=320) {
+            text_rect=text_rect.offset(-320,0);
+            first=false;
+        }
+        
+        if(!first && text_rect.x1>=text_start)
+            break;
+        
+    }
+}
+void lines_demo() {
+    draw::filled_rectangle(lcd,(srect16)lcd.bounds(),lcd_color::white);
+    const font& f = Bm437_ATI_9x16_FON;
+    const char* text = "ESP32 GFX Demo";
+    srect16 text_rect = srect16(spoint16(0,0),f.measure_text((ssize16)lcd.dimensions(),text));
+    text_rect=text_rect.offset((lcd_type::width-text_rect.width())/2,(lcd_type::height-text_rect.height())/2);
+    draw::text(lcd,text_rect,text,f,lcd_color::dark_blue);
+
+    for(int i = 1;i<100;++i) {
+        draw::line(lcd,srect16(0,i*(lcd_type::height/100.0),i*(lcd_type::width/100.0),lcd_type::height-1),lcd_color::light_blue);
+        draw::line(lcd,srect16(lcd_type::width-i*(lcd_type::width/100.0)-1,0,lcd_type::width-1,lcd_type::height-i*(lcd_type::height/100.0)-1),lcd_color::hot_pink);
+        draw::line(lcd,srect16(0,lcd_type::height-i*(lcd_type::height/100.0),i*(lcd_type::width/100.0)-1,0),lcd_color::pale_green);
+        draw::line(lcd,srect16(lcd_type::width-1,i*(lcd_type::height/100.0),lcd_type::width-i*(lcd_type::width/100.0)-1,lcd_type::height-1),lcd_color::yellow);
+        
+    }
+    //vTaskDelay(3000/portTICK_PERIOD_MS);
+}
+
 //Simple routine to generate some patterns and send them to the LCD. Don't expect anything too
 //impressive. Because the SPI driver handles transactions in the background, we can calculate the next line
 //while the previous one is being sent.
@@ -145,26 +194,29 @@ static void display_pretty_colors()
     //Indexes of the line currently being sent to the LCD and the line we're calculating.
     int sending_line=-1;
     int calc_line=0;
-
+    //lines_demo();
+    //scroll_text_demo();
     while(true) {
+        if(0==frame%150) {
+            lines_demo();
+            scroll_text_demo();
+        }
         ++frame;
         for (int y=0; y<240; y+=PARALLEL_LINES) {
             //Calculate a line.
             pretty_effect_calc_lines(lines[calc_line], y, frame, PARALLEL_LINES);
-            //Finish up the sending process of the previous line, if any
-            //if (sending_line!=-1) lcd.queued_wait();//send_line_finish(spi);
             //Swap sending_line and calc_line
             sending_line=calc_line;
             calc_line=(calc_line==1)?0:1;
             //Send the line we currently calculated.
-            // queued_frame_write works better the larger the transfer size. Here ours is pretty big
-            //lcd.queued_frame_write(0,y,lcd_type::width-1,y+PARALLEL_LINES-1,(uint8_t*)lines[sending_line]);
+            // draw::bitmap_async works better the larger the transfer size. Here ours is pretty big
             const lines_bmp_type& sending_bmp = line_bmps[sending_line];
             rect16 src_bounds = sending_bmp.bounds();
             draw::bitmap_async(lcd,(srect16)src_bounds.offset(0,y),sending_bmp,src_bounds);
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
-            //touch line[sending_line]; the SPI sending process is still reading from that.
+            //touch lines[sending_line] or the bitmap for it; 
+            // the SPI sending process is still reading from that.
         }
         if(0==frame%50) {
             using lcd_color = color<rgb_pixel<16>>;
@@ -232,52 +284,6 @@ static void display_pretty_colors()
     }
 }
 
-using lcd_color = color<typename lcd_type::pixel_type>;
-// produced by request
-void scroll_text_demo() {
-    lcd.clear(lcd.bounds());
-    const font& f = Bm437_ATI_9x16_FON;
-    const char* text = "Hello world!";
-    srect16 text_rect = srect16(spoint16(0,0),f.measure_text((ssize16)lcd.dimensions(),text));
-    while(true) {
-        draw::filled_rectangle(lcd,text_rect,lcd_color::black);
-        if(text_rect.x2>=320)
-        {
-            draw::filled_rectangle(lcd,text_rect.offset(-320,0),lcd_color::black);
-        }
-
-        text_rect=text_rect.offset(1,0);
-        draw::text(lcd,text_rect,text,f,lcd_color::white,lcd_color::black,false);
-       // draw::line(lcd,text_rect.inflate(-(text_rect.width()/2),-(text_rect.height()/2)),lcd_color::white);
-        if(text_rect.x2>=320)
-        {
-            draw::text(lcd,text_rect.offset(-320,0),text,f,lcd_color::white,lcd_color::black,false);
-        //    draw::line(lcd,text_rect.offset(-320,0).inflate(-(text_rect.width()/2),-(text_rect.height()/2)),lcd_color::white);
-        }
-        if(text_rect.x1>=320) {
-            text_rect=text_rect.offset(-320,0);
-        }
-        
-        //vTaskDelay(portMAX_DELAY);
-    }
-}
-void lines_demo() {
-    lcd.fill(lcd.bounds(),lcd_color::white);
-    const font& f = Bm437_ATI_9x16_FON;
-    const char* text = "ESP32 GFX Demo";
-    srect16 text_rect = srect16(spoint16(0,0),f.measure_text((ssize16)lcd.dimensions(),text));
-    text_rect=text_rect.offset((lcd_type::width-text_rect.width())/2,(lcd_type::height-text_rect.height())/2);
-    draw::text(lcd,text_rect,text,f,lcd_color::dark_blue);
-
-    for(int i = 1;i<100;++i) {
-        draw::line(lcd,srect16(0,i*(lcd_type::height/100.0),i*(lcd_type::width/100.0),lcd_type::height-1),lcd_color::light_blue);
-        draw::line(lcd,srect16(lcd_type::width-i*(lcd_type::width/100.0)-1,0,lcd_type::width-1,lcd_type::height-i*(lcd_type::height/100.0)-1),lcd_color::hot_pink);
-        draw::line(lcd,srect16(0,lcd_type::height-i*(lcd_type::height/100.0),i*(lcd_type::width/100.0)-1,0),lcd_color::pale_green);
-        draw::line(lcd,srect16(lcd_type::width-1,i*(lcd_type::height/100.0),lcd_type::width-i*(lcd_type::width/100.0)-1,lcd_type::height-1),lcd_color::yellow);
-        
-    }
-    //vTaskDelay(3000/portTICK_PERIOD_MS);
-}
 void app_main(void)
 {
     // check to make sure SPI was initialized successfully
@@ -285,7 +291,6 @@ void app_main(void)
         printf("SPI host initialization error.\r\n");
         abort();
     }
-   // lines_demo();
     // mount SPIFFS
     esp_err_t ret;
     esp_vfs_spiffs_conf_t conf = {};
