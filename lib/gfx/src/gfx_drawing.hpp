@@ -421,7 +421,7 @@ namespace gfx {
             return true;
         }
         template<typename Destination>
-        static gfx_result ellipse_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr,bool filled=false) {
+        static gfx_result ellipse_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip,bool filled,bool async) {
             gfx_result r;
             using int_type = typename srect16::value_type;
             int_type x_adj =(1-(rect.width()&1));
@@ -448,24 +448,24 @@ namespace gfx {
             // For region 1
             while (dx < dy+y_adj) {
                 if(filled) {
-                    r=line(destination,srect16(-x + xc, y + yc+y_adj,x + xc+x_adj, y + yc+y_adj),color,clip);
+                    r=line_impl(destination,srect16(-x + xc, y + yc+y_adj,x + xc+x_adj, y + yc+y_adj),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=line(destination,srect16(-x + xc, -y + yc,x + xc+x_adj, -y + yc),color,clip);
+                    r=line_impl(destination,srect16(-x + xc, -y + yc,x + xc+x_adj, -y + yc),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
                 } else {
                     // Print points based on 4-way symmetry
-                    r=point(destination,spoint16(x + xc+x_adj, y + yc+y_adj),color,clip);
+                    r=point_impl(destination,spoint16(x + xc+x_adj, y + yc+y_adj),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=point(destination,spoint16(-x + xc, y + yc+y_adj),color,clip);
+                    r=point_impl(destination,spoint16(-x + xc, y + yc+y_adj),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=point(destination,spoint16(x + xc+x_adj, -y + yc),color,clip);
+                    r=point_impl(destination,spoint16(x + xc+x_adj, -y + yc),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=point(destination,spoint16(-x + xc, -y + yc),color,clip);
+                    r=point_impl(destination,spoint16(-x + xc, -y + yc),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
                 }
@@ -495,23 +495,23 @@ namespace gfx {
         
                 // printing points based on 4-way symmetry
                 if(filled) {
-                    r=line(destination,srect16(-x + xc, y + yc+y_adj,x + xc+x_adj, y + yc+y_adj),color,clip);
+                    r=line_impl(destination,srect16(-x + xc, y + yc+y_adj,x + xc+x_adj, y + yc+y_adj),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=line(destination,srect16(-x + xc, -y + yc,x + xc+x_adj, -y + yc),color,clip);
+                    r=line_impl(destination,srect16(-x + xc, -y + yc,x + xc+x_adj, -y + yc),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
                 } else {
-                    r=point(destination,spoint16(x + xc+x_adj, y + yc+y_adj),color,clip);
+                    r=point_impl(destination,spoint16(x + xc+x_adj, y + yc+y_adj),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=point(destination,spoint16(-x + xc, y + yc+y_adj),color,clip);
+                    r=point_impl(destination,spoint16(-x + xc, y + yc+y_adj),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=point(destination,spoint16(x + xc+x_adj, -y + yc),color,clip);
+                    r=point_impl(destination,spoint16(x + xc+x_adj, -y + yc),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
-                    r=point(destination,spoint16(-x + xc, -y + yc),color,clip);
+                    r=point_impl(destination,spoint16(-x + xc, -y + yc),color,clip,async);
                     if(r!=gfx_result::success)
                         return r;
                 }
@@ -534,7 +534,7 @@ namespace gfx {
             return gfx_result::success;
         }
         template<typename Destination>
-        static gfx_result arc_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr,bool filled=false) {
+        static gfx_result arc_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip,bool filled,bool async) {
             using int_type = typename srect16::value_type;
             gfx_result r;
             int_type x_adj =(1-(rect.width()&1));
@@ -577,22 +577,22 @@ namespace gfx {
                 if(filled) {
                     switch(orient) {
                         case 0: //x1<=x2,y1<=y2
-                            r=line(destination,srect16(-x + xc, -y + yc, xc+x_adj, -y + yc),color,clip);        
+                            r=line_impl(destination,srect16(-x + xc, -y + yc, xc+x_adj, -y + yc),color,clip,async);        
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 1: //x1<=x2,y1>y2
-                            r=line(destination,srect16(-x + xc, y + yc-ry, xc+x_adj, y + yc-ry),color,clip);
+                            r=line_impl(destination,srect16(-x + xc, y + yc-ry, xc+x_adj, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 2: //x1>x2,y1<=y2
-                            r=line(destination,srect16( xc-rx, -y + yc,x + xc+x_adj-rx, -y + yc),color,clip);        
+                            r=line_impl(destination,srect16( xc-rx, -y + yc,x + xc+x_adj-rx, -y + yc),color,clip,async);        
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 3: //x1>x2,y1>y2
-                            r=line(destination,srect16( xc-rx, y + yc-ry,x + xc-rx, y + yc-ry),color,clip);
+                            r=line_impl(destination,srect16( xc-rx, y + yc-ry,x + xc-rx, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
@@ -601,38 +601,38 @@ namespace gfx {
                 } else {
                     switch(orient) {
                         case 0: //x1<=x2,y1<=y2
-                            r=point(destination,spoint16(-x + xc, -y + yc),color,clip);
+                            r=point_impl(destination,spoint16(-x + xc, -y + yc),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             if(x_adj && -y+yc==rect.y1) {
-                                r=point(destination,rect.top_right(),color,clip);
+                                r=point_impl(destination,rect.top_right(),color,clip,async);
                                 if(r!=gfx_result::success)
                                     return r;
                             }
                             
                             break;
                         case 1: //x1<=x2,y1>y2
-                            r=point(destination,spoint16(-x + xc, y + yc-ry),color,clip);
+                            r=point_impl(destination,spoint16(-x + xc, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             if(x_adj && y+yc-ry==rect.y1) {
-                                r=point(destination,rect.bottom_right(),color,clip);
+                                r=point_impl(destination,rect.bottom_right(),color,clip,async);
                                 if(r!=gfx_result::success)
                                     return r;
                             }
                             break;
                         case 2: //x1>x2,y1<=y2
-                            r=point(destination,spoint16(x + xc+x_adj-rx, -y + yc),color,clip);
+                            r=point_impl(destination,spoint16(x + xc+x_adj-rx, -y + yc),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             if(x_adj && -y+yc==rect.y1) {
-                                r=point(destination,rect.top_left(),color,clip);
+                                r=point_impl(destination,rect.top_left(),color,clip,async);
                                 if(r!=gfx_result::success)
                                     return r;
                             }
                             break;
                         case 3: //x1>x2,y1>y2
-                            r=point(destination,spoint16(x + xc+x_adj-rx, y + yc-ry),color,clip);
+                            r=point_impl(destination,spoint16(x + xc+x_adj-rx, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
@@ -668,22 +668,22 @@ namespace gfx {
                 if(filled) {
                     switch(orient) {
                         case 0: //x1<=x2,y1<=y2
-                            r=line(destination,srect16(-x + xc, -y + yc,xc+x_adj, -y + yc),color,clip);
+                            r=line_impl(destination,srect16(-x + xc, -y + yc,xc+x_adj, -y + yc),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 1: //x1<=x2,y1>y2
-                            r=line(destination,srect16(-x + xc, y + yc-ry,xc+x_adj, y + yc-ry),color,clip);
+                            r=line_impl(destination,srect16(-x + xc, y + yc-ry,xc+x_adj, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 2: //x1>x2,y1<=y2
-                            r=line(destination,srect16( xc-rx, -y + yc,x + xc+x_adj-rx, -y + yc),color,clip);
+                            r=line_impl(destination,srect16( xc-rx, -y + yc,x + xc+x_adj-rx, -y + yc),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 3: //x1>x2,y1>y2
-                            r=line(destination,srect16(xc-rx, y + yc-ry,x + xc+x_adj-rx, y + yc-ry),color,clip);
+                            r=line_impl(destination,srect16(xc-rx, y + yc-ry,x + xc+x_adj-rx, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
@@ -692,22 +692,22 @@ namespace gfx {
                 } else {
                     switch(orient) {
                         case 0: //x1<=x2,y1<=y2
-                            r=point(destination,spoint16(-x + xc, -y + yc),color,clip);
+                            r=point_impl(destination,spoint16(-x + xc, -y + yc),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 1: //x1<=x2,y1>y2
-                            r=point(destination,spoint16(-x + xc, y + yc-ry),color,clip);
+                            r=point_impl(destination,spoint16(-x + xc, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 2: //x1>x2,y1<=y2
-                            r=point(destination,spoint16(x + xc+x_adj-rx, -y + yc),color,clip);
+                            r=point_impl(destination,spoint16(x + xc+x_adj-rx, -y + yc),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
                         case 3: //x1>x2,y1>y2
-                            r=point(destination,spoint16(x + xc+x_adj-rx, y + yc-ry),color,clip);
+                            r=point_impl(destination,spoint16(x + xc+x_adj-rx, y + yc-ry),color,clip,async);
                             if(r!=gfx_result::success)
                                 return r;
                             break;
@@ -730,6 +730,64 @@ namespace gfx {
                     d2 = d2 + dx - dy + (rx * rx);
                 }
             }
+            return gfx_result::success;
+        }
+        template<typename Destination,bool Async>
+        struct draw_point_helper {
+        };
+        template<typename Destination>
+        struct draw_point_helper<Destination,true> {
+            static gfx_result do_draw(Destination& destination,point16 location,typename Destination::pixel_type color,bool async) {
+                if(!async) return draw_point_helper<Destination,false>::do_draw(destination,location,color,false);
+                return destination.point_async(location,color);
+            }
+        };
+        template<typename Destination>
+        struct draw_point_helper<Destination,false> {
+            static gfx_result do_draw(Destination& destination,point16 location,typename Destination::pixel_type color,bool async) {
+                return destination.point(location,color);
+            }
+        };
+        template<typename Destination>
+        static gfx_result point_impl(Destination& destination, spoint16 location,typename Destination::pixel_type color,srect16* clip,bool async) {
+            if(clip!=nullptr && !clip->intersects(location))
+                return gfx_result::success;
+            point16 p;
+            if(translate(location,&p)) {
+                if(async)
+                    return draw_point_helper<Destination,Destination::caps::async>::do_draw(destination,p,color,async);
+                return draw_point_helper<Destination,false>::do_draw(destination,p,color,async);
+            }
+            return gfx_result::success;
+        }
+        template<typename Destination,bool Async>
+        struct draw_filled_rect_helper {
+        };
+        template<typename Destination>
+        struct draw_filled_rect_helper<Destination,true> {
+            static gfx_result do_draw(Destination& destination,const rect16& rect,typename Destination::pixel_type color,bool async) {
+                if(!async) return draw_filled_rect_helper<Destination,false>::do_draw(destination,rect,color,false);
+                return destination.fill_async(rect,color);
+            }
+        };
+        template<typename Destination>
+        struct draw_filled_rect_helper<Destination,false> {
+            static gfx_result do_draw(Destination& destination,const rect16& rect,typename Destination::pixel_type color,bool async) {
+                return destination.fill(rect,color);
+            }
+        };
+        template<typename Destination>
+        static gfx_result filled_rectangle_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip,bool async) {
+            srect16 sr=rect;
+            if(nullptr!=clip)
+                sr=sr.crop(*clip);
+            rect16 r;
+            if(!translate_adjust(sr,&r))
+                return gfx_result::success;
+            r=r.crop(destination.bounds());
+            if(async)
+                return draw_filled_rect_helper<Destination,Destination::caps::async>::do_draw(destination,r,color,true);
+            return draw_filled_rect_helper<Destination,false>::do_draw(destination,r,color,false);
         }
         template<typename Destination,bool Batch>
         struct draw_font_batch_helper {
@@ -821,65 +879,10 @@ namespace gfx {
                 return r;
             }
         };
-    public:
-        // draws a point at the specified location and of the specified color, with an optional clipping rectangle
         template<typename Destination>
-        static gfx_result point(Destination& destination, spoint16 location,typename Destination::pixel_type color,srect16* clip=nullptr) {
-            if(clip!=nullptr && !clip->intersects(location))
-                return gfx_result::success;
-            point16 p;
-            if(translate(location,&p)) {
-                return destination.point(p,color);
-            }
-            return gfx_result::success;
-        }
-        // draws a filled rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
-        template<typename Destination>
-        static gfx_result filled_rectangle(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
-            gfx_result r;
-            rect16 ur;
-            if(nullptr==clip) {
-                
-                if(((srect16)destination.bounds()).intersects(rect)) {
-                    ur=(rect16)rect.crop((srect16)destination.bounds());
-                    r=destination.fill(ur,color);
-                    if(r!=gfx_result::success)
-                        return r;
-                }
-                return gfx_result::success;
-            }
-            if(!clip->intersects(rect))
-                return gfx_result::success;
-            
-            srect16 sr = rect.crop(*clip);
-            if(translate_adjust(sr,&ur))
-                return destination.fill(ur,color);
-            return gfx_result::success;
-        }
-        // draws a rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
-        template<typename Destination>
-        static gfx_result rectangle(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
-            gfx_result r;
-            // top or bottom
-            r=line(destination,srect16(rect.x1,rect.y1,rect.x2,rect.y1),color,clip);
-            if(r!=gfx_result::success)
-                return r;
-            // left or right
-            r=line(destination,srect16(rect.x1,rect.y1,rect.x1,rect.y2),color,clip);
-            if(r!=gfx_result::success)
-                return r;
-            // right or left
-            r=line(destination,srect16(rect.x2,rect.y1,rect.x2,rect.y2),color,clip);
-            if(r!=gfx_result::success)
-                return r;
-            // bottom or top
-            return line(destination,srect16(rect.x1,rect.y2,rect.x2,rect.y2),color,clip);
-        }
-        // draws a line with the specified start and end point and of the specified color, with an optional clipping rectangle
-        template<typename Destination>
-        static gfx_result line(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+        static gfx_result line_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip,bool async) {
             if(rect.x1==rect.x2||rect.y1==rect.y2) {
-                return filled_rectangle(destination,rect,color,clip);
+                return filled_rectangle_impl(destination,rect,color,clip,async);
             }
             srect16 c = (nullptr!=clip)?*clip:rect;
             ssize16 ss;
@@ -922,7 +925,7 @@ namespace gfx {
                     
                     x+=xinc;
                     if(oy!=y || y==r.y1) {
-                        line(destination,srect16(ox,oy,x,oy),color,nullptr);
+                        line_impl(destination,srect16(ox,oy,x,oy),color,nullptr,async);
                         ox=x;
                     }
                     
@@ -946,36 +949,34 @@ namespace gfx {
                     }
                     y+=yinc;
                     if(ox!=x || x==r.x1) {
-                        line(destination,srect16(ox,oy,ox,y),color,nullptr);
+                        line_impl(destination,srect16(ox,oy,ox,y),color,nullptr,async);
                         oy=y;
                     }
                 }
             }
             return gfx_result::success;
         }
-        // draws an ellipse with the specified dimensions and of the specified color, with an optional clipping rectangle
         template<typename Destination>
-        static gfx_result ellipse(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
-            return ellipse_impl(destination,rect,color,clip,false);
+        static gfx_result rectangle_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip,bool async) {
+            gfx_result r;
+            // top or bottom
+            r=line_async(destination,srect16(rect.x1,rect.y1,rect.x2,rect.y1),color,clip,async);
+            if(r!=gfx_result::success)
+                return r;
+            // left or right
+            r=line_async(destination,srect16(rect.x1,rect.y1,rect.x1,rect.y2),color,clip,async);
+            if(r!=gfx_result::success)
+                return r;
+            // right or left
+            r=line_async(destination,srect16(rect.x2,rect.y1,rect.x2,rect.y2),color,clip,async);
+            if(r!=gfx_result::success)
+                return r;
+            // bottom or top
+            return line_async(destination,srect16(rect.x1,rect.y2,rect.x2,rect.y2),color,clip,async);
         }
-        // draws a filled ellipse with the specified dimensions and of the specified color, with an optional clipping rectangle
         template<typename Destination>
-        static gfx_result filled_ellipse(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
-            return ellipse_impl(destination,rect,color,clip,true);
-        }
-        // draws an arc with the specified dimensions and of the specified color, with an optional clipping rectangle
-        template<typename Destination>
-        static gfx_result arc(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
-            return arc_impl(destination,rect,color,clip,false);
-        }
-        // draws a arc with the specified dimensions and of the specified color, with an optional clipping rectangle
-        template<typename Destination>
-        static gfx_result filled_arc(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
-            return arc_impl(destination,rect,color,clip,true);
-        }
-        // draws a rounded rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
-        template<typename Destination>
-        static gfx_result rounded_rectangle(Destination& destination,const srect16& rect,float ratio, typename Destination::pixel_type color,srect16* clip=nullptr)  {
+        static gfx_result rounded_rectangle_impl(Destination& destination,const srect16& rect,float ratio, typename Destination::pixel_type color,srect16* clip,bool async) {
+            // TODO: This can be sped up by copying the ellipse algorithm and modifying it slightly.
             gfx_result r;
             srect16 sr=rect.normalize();
             float fx = .025>ratio?.025:ratio>.5?.5:ratio;
@@ -983,36 +984,35 @@ namespace gfx {
             int rw = (sr.width()*fx+.5);
             int rh = (sr.height()*fy+.5);
             // top
-            r=line(destination,srect16(sr.x1+rw,sr.y1,sr.x2-rw,sr.y1),color,clip);
+            r=line_impl(destination,srect16(sr.x1+rw,sr.y1,sr.x2-rw,sr.y1),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
             // left
-            r=line(destination,srect16(sr.x1,sr.y1+rh,sr.x1,sr.y2-rh),color,clip);
+            r=line_impl(destination,srect16(sr.x1,sr.y1+rh,sr.x1,sr.y2-rh),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
             // right
-            r=line(destination,srect16(sr.x2,sr.y1+rh,sr.x2,sr.y2-rh),color,clip);
+            r=line_impl(destination,srect16(sr.x2,sr.y1+rh,sr.x2,sr.y2-rh),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
             // bottom
-            r=line(destination,srect16(sr.x1+rw,sr.y2,sr.x2-rw,sr.y2),color,clip);
+            r=line_impl(destination,srect16(sr.x1+rw,sr.y2,sr.x2-rw,sr.y2),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
 
-            r=arc(destination,srect16(sr.top_left(),ssize16(rw+1,rh+1)),color,clip);
+            r=arc_impl(destination,srect16(sr.top_left(),ssize16(rw+1,rh+1)),color,clip,false,async);
             if(gfx_result::success!=r)
                 return r;
-            r=arc(destination,srect16(spoint16(sr.x2-rw,sr.y1),ssize16(rw+1,rh+1)).flip_horizontal(),color,clip);
+            r=arc_impl(destination,srect16(spoint16(sr.x2-rw,sr.y1),ssize16(rw+1,rh+1)).flip_horizontal(),color,clip,false,async);
             if(gfx_result::success!=r)
                 return r;
-            r=arc(destination,srect16(spoint16(sr.x1,sr.y2-rh),ssize16(rw,rh)).flip_vertical(),color,clip);
+            r=arc_impl(destination,srect16(spoint16(sr.x1,sr.y2-rh),ssize16(rw,rh)).flip_vertical(),color,clip,false,async);
             if(gfx_result::success!=r)
                 return r;
-            return arc(destination,srect16(spoint16(sr.x2-rw,sr.y2-rh),ssize16(rw+1,rh)).flip_all(),color,clip);
+            return arc_impl(destination,srect16(spoint16(sr.x2-rw,sr.y2-rh),ssize16(rw+1,rh)).flip_all(),color,clip,false,async);
         }
-        // draws a filled rounded rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
         template<typename Destination>
-        static gfx_result filled_rounded_rectangle(Destination& destination,const srect16& rect,const float ratio, typename Destination::pixel_type color,srect16* clip=nullptr)  {
+        static gfx_result filled_rounded_rectangle_impl(Destination& destination,const srect16& rect,float ratio, typename Destination::pixel_type color,srect16* clip,bool async) {
             gfx_result r;
             srect16 sr=rect.normalize();
             float fx = .025>ratio?.025:ratio>.5?.5:ratio;
@@ -1020,28 +1020,129 @@ namespace gfx {
             int rw = (sr.width()*fx+.5);
             int rh = (sr.height()*fy+.5);
             // top
-            r=filled_rectangle(destination,srect16(sr.x1+rw,sr.y1,sr.x2-rw,sr.y1+rh-1),color,clip);
+            r=filled_rectangle_impl(destination,srect16(sr.x1+rw,sr.y1,sr.x2-rw,sr.y1+rh-1),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
             // middle
-            r=filled_rectangle(destination,srect16(sr.x1,sr.y1+rh,sr.x2,sr.y2-rh-1),color,clip);
+            r=filled_rectangle_impl(destination,srect16(sr.x1,sr.y1+rh,sr.x2,sr.y2-rh-1),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
             // bottom
-            r=filled_rectangle(destination,srect16(sr.x1+rw,sr.y2-rh,sr.x2-rw,sr.y2),color,clip);
+            r=filled_rectangle_impl(destination,srect16(sr.x1+rw,sr.y2-rh,sr.x2-rw,sr.y2),color,clip,async);
             if(gfx_result::success!=r)
                 return r;
 
-            r=filled_arc(destination,srect16(sr.top_left(),ssize16(rw+1,rh+1)),color,clip);
+            r=arc_impl(destination,srect16(sr.top_left(),ssize16(rw+1,rh+1)),color,clip,true,async);
             if(gfx_result::success!=r)
                 return r;
-            r=filled_arc(destination,srect16(spoint16(sr.x2-rw,sr.y1),ssize16(rw+1,rh+1)).flip_horizontal(),color,clip);
+            r=arc_impl(destination,srect16(spoint16(sr.x2-rw,sr.y1),ssize16(rw+1,rh+1)).flip_horizontal(),color,clip,true,async);
             if(gfx_result::success!=r)
                 return r;
-            r=filled_arc(destination,srect16(spoint16(sr.x1,sr.y2-rh),ssize16(rw,rh)).flip_vertical(),color,clip);
+            r=arc_impl(destination,srect16(spoint16(sr.x1,sr.y2-rh),ssize16(rw,rh)).flip_vertical(),color,clip,true,async);
             if(gfx_result::success!=r)
                 return r;
-            return filled_arc(destination,srect16(spoint16(sr.x2-rw,sr.y2-rh),ssize16(rw+1,rh)).flip_all(),color,clip);
+            return arc_impl(destination,srect16(spoint16(sr.x2-rw,sr.y2-rh),ssize16(rw+1,rh)).flip_all(),color,clip,true,async);
+        }
+    public:
+        // draws a point at the specified location and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result point(Destination& destination, spoint16 location,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return point_impl(destination,location,color,clip,false);
+        }
+        // asynchronously draws a point at the specified location and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result point_async(Destination& destination, spoint16 location,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return point_impl(destination,location,color,clip,true);
+        }
+        // draws a filled rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_rectangle(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return filled_rectangle_impl(destination,rect,color,clip,false);
+        }
+        // asynchronously draws a filled rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_rectangle_async(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return filled_rectangle_impl(destination,rect,color,clip,true);
+        }
+        // draws a rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result rectangle(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return rectangle_impl(destination,rect,color,clip,false);
+        }
+        // asynchronously draws a rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result rectangle_async(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return rectangle_impl(destination,rect,color,clip,true);
+        }
+        // draws a line with the specified start and end point and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result line(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return line_impl(destination,rect,color,clip,false);
+        }
+        // asynchronously draws a line with the specified start and end point and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result line_async(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr) {
+            return line_impl(destination,rect,color,clip,true);
+        }
+        // draws an ellipse with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result ellipse(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return ellipse_impl(destination,rect,color,clip,false,false);
+        }
+        // asynchronously draws an ellipse with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result ellipse_async(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return ellipse_impl(destination,rect,color,clip,false,true);
+        }
+        // draws a filled ellipse with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_ellipse(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return ellipse_impl(destination,rect,color,clip,true,false);
+        }
+        // asynchronously draws a filled ellipse with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_ellipse_async(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return ellipse_impl(destination,rect,color,clip,true,true);
+        }
+        // draws an arc with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result arc(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return arc_impl(destination,rect,color,clip,false,false);
+        }
+        // asynchronously draws an arc with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result arc_async(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return arc_impl(destination,rect,color,clip,false,true);
+        }
+        // draws a arc with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_arc(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return arc_impl(destination,rect,color,clip,true,false);
+        }
+        // draws a arc with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_arc_async(Destination& destination,const srect16& rect,typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return arc_impl(destination,rect,color,clip,true,true);
+        }
+        // draws a rounded rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result rounded_rectangle(Destination& destination,const srect16& rect,float ratio, typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return rounded_rectangle_impl(destination,rect,ratio,color,clip,false);
+        }
+        // asynchronously draws a rounded rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result rounded_rectangle_async(Destination& destination,const srect16& rect,float ratio, typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return rounded_rectangle_impl(destination,rect,ratio,color,clip,true);
+        }
+        // draws a filled rounded rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_rounded_rectangle(Destination& destination,const srect16& rect,const float ratio, typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return filled_rounded_rectangle_impl(destination,rect,ratio,color,clip,false);
+        }
+        // asynchronously draws a filled rounded rectangle with the specified dimensions and of the specified color, with an optional clipping rectangle
+        template<typename Destination>
+        inline static gfx_result filled_rounded_rectangle_async(Destination& destination,const srect16& rect,const float ratio, typename Destination::pixel_type color,srect16* clip=nullptr)  {
+            return filled_rounded_rectangle_impl(destination,rect,ratio,color,clip,true);
         }
         // draws a portion of a bitmap or display buffer to the specified rectangle with an optional clipping rentangle
         template<typename Destination,typename Source>

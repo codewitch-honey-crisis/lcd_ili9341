@@ -64,6 +64,11 @@ namespace espidf {
         size_t m_batch_left;
         size_t m_queued_transactions;
         spi_device m_spi;
+        // address window caching
+        uint16_t m_batch_x1;
+        uint16_t m_batch_y1;
+        uint16_t m_batch_x2;
+        uint16_t m_batch_y2;
         struct init_cmd {
             uint8_t cmd;
             uint8_t data[16];
@@ -250,7 +255,8 @@ namespace espidf {
                                     uint16_t y1,
                                     uint16_t x2,
                                     uint16_t y2,
-                                    bool queued) {
+                                    bool queued,
+                                    bool set_full) {
              // normalize values
             uint16_t tmp;
             if(x1>x2) {
@@ -263,27 +269,40 @@ namespace espidf {
                 y1=y2;
                 y2=tmp;
             }
-            //Column Address Set
-            result r=send_next_command(0x2A,queued);
-            if(result::success!=r)
-                return r;
+            result r;
             uint8_t tx_data[4];
-            tx_data[0]=x1>>8;             //Start Col High
-            tx_data[1]=x1&0xFF;           //Start Col Low
-            tx_data[2]=x2>>8;             //End Col High
-            tx_data[3]=x2&0xff;           //End Col Low
-            r=send_next_data(tx_data,4,queued,true);
-            if(result::success!=r)
-                return r;
-            //Page address set
-            r=send_next_command(0x2B,queued,true);
-            if(result::success!=r)
-                return r;
-            tx_data[0]=y1>>8;        //Start page high
-            tx_data[1]=y1&0xff;      //start page low
-            tx_data[2]=y2>>8;        //end page high
-            tx_data[3]=y2&0xff;      //end page low
-            r=send_next_data(tx_data,4,queued,true);
+            bool sent = false;
+            if(set_full||x1!=m_batch_x1||x2!=m_batch_x2) {
+                //Column Address Set
+                r=send_next_command(0x2A,queued);
+                if(result::success!=r)
+                    return r;
+                tx_data[0]=x1>>8;             //Start Col High
+                tx_data[1]=x1&0xFF;           //Start Col Low
+                tx_data[2]=x2>>8;             //End Col High
+                tx_data[3]=x2&0xff;           //End Col Low
+                r=send_next_data(tx_data,4,queued,true);
+                if(result::success!=r)
+                    return r;
+                m_batch_x1=x1;
+                m_batch_x2=x2;
+                sent = true;
+            } 
+            if(set_full||!sent||y1!=m_batch_y1||y2!=m_batch_y2) {
+                //Page address set
+                r=send_next_command(0x2B,queued,true);
+                if(result::success!=r)
+                    return r;
+                tx_data[0]=y1>>8;        //Start page high
+                tx_data[1]=y1&0xff;      //start page low
+                tx_data[2]=y2>>8;        //end page high
+                tx_data[3]=y2&0xff;      //end page low
+                r=send_next_data(tx_data,4,queued,true);
+                if(result::success!=r)
+                    return r;
+                m_batch_y1=y1;
+                m_batch_y2=y2;
+            }
             // Memory write
             return send_next_command(0x2C,queued,true);
         }       
@@ -340,10 +359,10 @@ namespace espidf {
             uint16_t w = x2-x1+1;
             uint16_t h = y2-y1+1;
             result r;
-            /*if(w==1&&h==1) {
+            if(w==1&&h==1) {
                 return pixel_write_impl(x1,y1,color,queued);
-            }*/
-            r=batch_write_begin_impl(x1,y1,x2,y2,queued);
+            }
+            r=batch_write_begin_impl(x1,y1,x2,y2,queued,false);
             if(result::success!=r)
                 return r;
             size_t pc=w*h;
@@ -366,14 +385,23 @@ namespace espidf {
             
             // set the address window. we're not
             // actually batching here.
-            result r=batch_write_begin_impl(x,y,x,y,queued);
+            result r=batch_write_begin_impl(x,y,x,y,queued,false);
             if(result::success!=r)
                 return r;
-            return send_next_data((uint8_t*)&color,2,queued);
+            return send_next_data((uint8_t*)&color,2,queued,false);
         }
     public:
         // constructs a new instance of the driver
-        ili9341(result* out_result = nullptr) : m_initialized(false),m_next_transaction(0),  m_batch_left(0),m_queued_transactions(0), m_spi(host_id,get_device_config())  {
+        ili9341(result* out_result = nullptr) : 
+            m_initialized(false),
+            m_next_transaction(0),
+            m_batch_left(0),
+            m_queued_transactions(0),
+            m_spi(host_id,get_device_config()),
+            m_batch_x1(uint16_t(-1)),
+            m_batch_y1(uint16_t(-1)),
+            m_batch_x2(uint16_t(-1)),
+            m_batch_y2(uint16_t(-1)) {
             if(!m_spi.initialized()) {
                 if(nullptr!=out_result) {
                     *out_result=result::io_error;
@@ -483,7 +511,7 @@ namespace espidf {
             }
             // set the address window - we don't actually do a batch
             // here, but we use this for our own purposes
-            r=batch_write_begin_impl(x1,y1,x2,y2,true);
+            r=batch_write_begin_impl(x1,y1,x2,y2,true,true);
             if(result::success!=r)
                 return r;
             
@@ -502,20 +530,24 @@ namespace espidf {
         }
         // fills the target rectangle of the frame buffer with a pixel
         result frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
+            if(x1==x2&&y1==y2)
+                return pixel_write_impl(x1,x2,color,false);
             return frame_fill_impl(x1,y1,x2,y2,color,false);
         }
         // queues the fill of a target rectangle with the specified pixel
         result queued_frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
+            if(x1==x2&&y1==y2)
+                return pixel_write_impl(x1,x2,color,false);
             return frame_fill_impl(x1,y1,x2,y2,color,true);
         }
 
         // begins a batch write for the given target coordinates
         result batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
-            return batch_write_begin_impl(x1,y1,x2,y2,false);
+            return batch_write_begin_impl(x1,y1,x2,y2,false,true);
         }
         // queues the beginning of a batch write for the target coordinates
         result queued_batch_write_begin(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2) {
-            return batch_write_begin_impl(x1,y1,x2,y2,true);
+            return batch_write_begin_impl(x1,y1,x2,y2,true,true);
         }
         // does a batch write. the batch operation must have been started with
         // batch_write_begin() or queued_batch_write_begin()
@@ -541,7 +573,7 @@ namespace espidf {
         }
         // queues a write of a pixel at the specified coordinates
         inline result queued_pixel_write(uint16_t x,uint16_t y,uint16_t color) {
-            return pixel_write_impl(x,y,true);
+            return pixel_write_impl(x,y,color,true);
         }
         // waits for all pending queued operations
         result queued_wait()
