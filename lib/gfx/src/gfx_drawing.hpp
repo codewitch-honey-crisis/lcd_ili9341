@@ -880,6 +880,15 @@ namespace gfx {
                 return destination.fill(rect,color);
             }
         };
+        template<typename Destination,bool Async>
+        struct async_wait_helper {
+            inline static gfx_result wait_all(Destination& destination) {return gfx_result::success;}
+        };
+        template<typename Destination>
+        struct async_wait_helper<Destination,true> {
+            inline static gfx_result wait_all(Destination& destination) {return destination.wait_all_async();}
+        };
+        
         template<typename Destination>
         static gfx_result filled_rectangle_impl(Destination& destination, const srect16& rect,typename Destination::pixel_type color,srect16* clip,bool async) {
             srect16 sr=rect;
@@ -1352,6 +1361,11 @@ namespace gfx {
                 }
             }
             return gfx_result::success;
+        }
+        // waits for all asynchronous operations on the destination to complete
+        template<typename Destination>
+        static gfx_result wait_all_async(Destination& destination) {
+            return async_wait_helper<Destination,Destination::caps::async>::wait_all(destination);
         }
     };
 }

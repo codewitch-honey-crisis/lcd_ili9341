@@ -120,7 +120,7 @@ using lcd_type = ili9341<LCD_HOST,
                         PIN_NUM_CS,
                         PIN_NUM_DC,
                         PIN_NUM_RST,
-                        PIN_NUM_BCKL,64>;
+                        PIN_NUM_BCKL>;
 
 lcd_type lcd;
 
@@ -207,7 +207,7 @@ static void display_pretty_colors()
             pretty_effect_calc_lines(lines[calc_line], y, frame, PARALLEL_LINES);
             // wait for the last frame to finish. Don't need this unless transactions are > 7
             if(-1!=sending_line)
-                lcd.queued_wait();
+                draw::wait_all_async(lcd);
             //Swap sending_line and calc_line
             sending_line=calc_line;
             calc_line=(calc_line==1)?0:1;

@@ -18,7 +18,8 @@ namespace espidf {
             gpio_num_t PinBacklight,
             size_t BufferSize=64,
             size_t MaxTransactions=7,
-            TickType_t Timeout=5000/portTICK_PERIOD_MS>
+            TickType_t Timeout=5000/portTICK_PERIOD_MS,
+            bool UsePolling=true>
     struct ili9341 {
         // the SPI host to use
         constexpr static const spi_host_device_t host_id = HostId;
@@ -40,6 +41,8 @@ namespace espidf {
         constexpr static const size_t max_transactions = (0==MaxTransactions)?1:MaxTransactions;
         // the timeout for queued sends
         constexpr static const TickType_t timeout = Timeout;
+        // indicates whether non queued transactions use polling
+        constexpr static const bool use_polling = UsePolling;
         // indicates the result of driver operations
         enum struct result {
             // the operation completed successfully
@@ -118,10 +121,9 @@ namespace espidf {
         }
        
         result commit_batch_internal(bool queued) {
-            spi_result rr;
-            rr=m_spi_mgr.write(m_buffer,m_batch_left*2,(void*)1,(queued)?spi_transaction_type::queued:spi_transaction_type::polling);
-            if(spi_result::success!=rr)
-                return xlt_err(rr);
+            result r=send_next_data(m_buffer,m_batch_left*2,queued,true);
+            if(result::success!=r)
+                return r;
             m_batch_left=0;
             return result::success;
         }
@@ -137,7 +139,7 @@ namespace espidf {
                 if(result::success!=r)
                     return r;
             }
-            rr = m_spi_mgr.write(data,size,(void*)user,(queued)?spi_transaction_type::queued:spi_transaction_type::polling);
+            rr = m_spi_mgr.write(data,size,(void*)user,(queued)?spi_transaction_type::queued:(use_polling)?spi_transaction_type::polling:spi_transaction_type::interrupt);
             if(spi_result::success!=rr)
                 return xlt_err(rr);
             return result::success;
@@ -390,7 +392,7 @@ namespace espidf {
             return send_next_data(bmp_data,(x2-x1+1)*(y2-y1+1)*2,false,true);
         }
         // queues a frame write operation. The bitmap data must be valid 
-        // for the duration of the operation (until queued_wait())
+        // for the duration of the operation (until queued_wait_all())
         result queued_frame_write(uint16_t x1,
                                 uint16_t y1, 
                                 uint16_t x2, 
@@ -420,7 +422,7 @@ namespace espidf {
                 if(result::success!=r) {
                     return r;
                 }
-                r=queued_wait();
+                r=queued_wait_all();
                 if(result::success!=r)
                     return r;
             }
@@ -439,7 +441,7 @@ namespace espidf {
             // so the CPU doesn't have much to do here. We're not going to 
             // wait for the transaction to finish because we may as well spend
             // the time doing something else. When that is done, we can call
-            // queued_wait(), which will wait for the transfers to be done.
+            // queued_wait_all(), which will wait for the transfers to be done.
             // otherwise, the transactions will be queued as the old ones finish
             return r;  
         }
@@ -491,7 +493,7 @@ namespace espidf {
             return pixel_write_impl(x,y,color,true);
         }
         // waits for all pending queued operations
-        result queued_wait()
+        result queued_wait_all()
         {
             spi_result rr = m_spi_mgr.wait_all();
             if(spi_result::success!=rr)
@@ -701,18 +703,19 @@ namespace espidf {
             return copy_from_impl(src_rect,src,location,true);
         }
         // waits for all pending asynchronous operations to complete
-        gfx::gfx_result wait_async() {
+        gfx::gfx_result wait_all_async() {
             result r = batch_write_commit_impl(m_spi_mgr.has_queued_transactions());
             if(result::success!=r)
                 return xlt_err(r);
-            r=queued_wait();
+            r=queued_wait_all();
             if(result::success!=r)
                 return xlt_err(r);
             return gfx::gfx_result::success;
         }
+        
     };
-    template<spi_host_device_t HostId,gpio_num_t PinCS,gpio_num_t PinDC,gpio_num_t PinRst,gpio_num_t PinBacklight,size_t BufferSize,size_t MaxTransactions,TickType_t Timeout>
-    const typename ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize,MaxTransactions,Timeout>::init_cmd ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize,MaxTransactions,Timeout>::s_init_cmds[]={
+    template<spi_host_device_t HostId,gpio_num_t PinCS,gpio_num_t PinDC,gpio_num_t PinRst,gpio_num_t PinBacklight,size_t BufferSize,size_t MaxTransactions,TickType_t Timeout,bool UsePolling>
+    const typename ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize,MaxTransactions,Timeout,UsePolling>::init_cmd ili9341<HostId,PinCS,PinDC,PinRst,PinBacklight,BufferSize,MaxTransactions,Timeout,UsePolling>::s_init_cmds[]={
             /* Power contorl B, power control = 0, DC_ENA = 1 */
             {0xCF, {0x00, 0x83, 0X30}, 3},
             /* Power on sequence control,
