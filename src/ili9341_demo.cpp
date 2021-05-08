@@ -97,6 +97,9 @@ using namespace gfx;
 #define PIN_NUM_BCKL GPIO_NUM_19
 #endif
 
+
+// enable this to dump the jpeg images as ascii upon load
+//#define ASCII_JPEGS
 // To speed up transfers, every SPI transfer sends as much data as possible. 
 
 // configure the spi bus. Must be done before the driver
@@ -246,8 +249,10 @@ static void display_pretty_colors()
     //Indexes of the line currently being sent to the LCD and the line we're calculating.
     int sending_line=-1;
     int calc_line=0;
-    //lines_demo();
-    //scroll_text_demo();
+ 
+#ifdef ASCII_JPEGS
+    bool print=true;
+#endif
     while(true) {
         if(0==frame%150) {
             lines_demo();
@@ -267,6 +272,13 @@ static void display_pretty_colors()
             // draw::bitmap_async works better the larger the transfer size. Here ours is pretty big
             const lines_bmp_type& sending_bmp = line_bmps[sending_line];
             rect16 src_bounds = sending_bmp.bounds();
+#ifdef ASCII_JPEGS
+            if(print) {
+                if(y+PARALLEL_LINES>=240)
+                    print=false;
+                print_source(sending_bmp);
+            }
+#endif
             draw::bitmap_async(lcd,(srect16)src_bounds.offset(0,y),sending_bmp,src_bounds);
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
@@ -338,6 +350,9 @@ static void display_pretty_colors()
                 return true;
 
             },pixels);
+#ifdef ASCII_JPEGS
+            print=true;
+#endif
         }
     }
 }
