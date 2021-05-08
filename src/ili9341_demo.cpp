@@ -9,7 +9,6 @@ extern "C" { void app_main(); }
 #include "spi_master.hpp"
 #include "esp_spiffs.h"
 #include "ili9341.hpp"
-#include "pretty_effect.hpp"
 #include "gfx_drawing.hpp"
 #include "gfx_image.hpp"
 #include "gfx_drawing.hpp"
@@ -18,10 +17,10 @@ extern "C" { void app_main(); }
 #include "../fonts/Bm437_Acer_VGA_8x8.h"
 #include "../fonts/Bm437_ACM_VGA_9x16.h"
 #include "../fonts/Bm437_ATI_9x16.h"
+#include "pretty_effect.hpp"
 using namespace espidf;
 using namespace io;
 using namespace gfx;
-
 // the following is configured for the ESP-WROVER-KIT
 // make sure to set the pins to your set up.
 #ifdef CONFIG_IDF_TARGET_ESP32
@@ -98,7 +97,6 @@ using namespace gfx;
 #define PIN_NUM_BCKL GPIO_NUM_19
 #endif
 
-
 // To speed up transfers, every SPI transfer sends as much data as possible. 
 
 // configure the spi bus. Must be done before the driver
@@ -125,19 +123,74 @@ using lcd_type = ili9341<LCD_HOST,
 lcd_type lcd;
 
 using lcd_color = color<typename lcd_type::pixel_type>;
+
+// prints a source as 4-bit grayscale ASCII
+template <typename Source>
+void print_source(const Source& src) {
+    static const char *col_table = " .,-~;*+!=1%O@$#";
+    using gsc4 = pixel<channel_traits<channel_name::L,4>>;
+    for(int y = 0;y<src.dimensions().height;++y) {
+        for(int x = 0;x<src.dimensions().width;++x) {
+            typename Source::pixel_type px;
+            src.point(point16(x,y),&px);
+            const auto px2 = px.template convert<gsc4>();
+            size_t i =px2.template channel<0>();
+            printf("%c",col_table[i]);
+        }
+        printf("\r\n");
+    }
+}
+static const size16 bmp_size(32,32);
+using bmp_type = bitmap<typename lcd_type::pixel_type>;
+using bmp_color = color<typename lcd_type::pixel_type>;
+// declare the bitmap
+uint8_t bmp_buf[2048];
+bmp_type bmp(bmp_size,bmp_buf);
+
 // produced by request
 void scroll_text_demo() {
     lcd.clear(lcd.bounds());
+    
+    // draw stuff
+    bmp.clear(bmp.bounds()); // comment this out and check out the uninitialized RAM. It looks neat.
+
+    // bounding info for the face
+    srect16 bounds(0,0,bmp_size.width-1,(bmp_size.height-1)/(4/3.0));
+    rect16 ubounds(0,0,bounds.x2,bounds.y2);
+
+    // draw the face
+    draw::filled_ellipse(bmp,bounds,bmp_color::yellow);
+    
+    // draw the left eye
+    srect16 eye_bounds_left(spoint16(bounds.width()/5,bounds.height()/5),ssize16(bounds.width()/5,bounds.height()/3));
+    draw::filled_ellipse(bmp,eye_bounds_left,bmp_color::black);
+    
+    // draw the right eye
+    srect16 eye_bounds_right(
+        spoint16(
+            bmp_size.width-eye_bounds_left.x1-eye_bounds_left.width(),
+            eye_bounds_left.y1
+        ),eye_bounds_left.dimensions());
+    draw::filled_ellipse(bmp,eye_bounds_right,bmp_color::black);
+    
+    // draw the mouth
+    srect16 mouth_bounds=bounds.inflate(-bounds.width()/7,-bounds.height()/8).normalize();
+    // we need to clip part of the circle we'll be drawing
+    srect16 mouth_clip(mouth_bounds.x1,mouth_bounds.y1+mouth_bounds.height()/(float)1.6,mouth_bounds.x2,mouth_bounds.y2);
+    draw::ellipse(bmp,mouth_bounds,bmp_color::black,&mouth_clip);
+    draw::bitmap(lcd,(srect16)bmp.bounds().center_horizontal(lcd.bounds()),bmp,bmp.bounds());
     const font& f = Bm437_ATI_9x16_FON;
     const char* text = "copyright (C) 2021\r\nby honey the codewitch";
     ssize16 text_size = f.measure_text((ssize16)lcd.dimensions(),text);
     srect16 text_rect = srect16(spoint16((lcd_type::width-text_size.width)/2,(lcd_type::height-text_size.height)/2),text_size);
     int16_t text_start = text_rect.x1;
     bool first=true;
+    print_source(bmp);
     while(true) {
-        draw::filled_rectangle(lcd,text_rect,lcd_color::black);
+
+       draw::filled_rectangle(lcd,text_rect,lcd_color::black);
         if(text_rect.x2>=320) {
-            draw::filled_rectangle(lcd,text_rect.offset(-320,0),lcd_color::black);
+           draw::filled_rectangle(lcd,text_rect.offset(-320,0),lcd_color::black);
         }
 
         text_rect=text_rect.offset(2,0);
@@ -152,7 +205,7 @@ void scroll_text_demo() {
         
         if(!first && text_rect.x1>=text_start)
             break;
-        
+        vTaskDelay(1);
     }
 }
 void lines_demo() {
@@ -168,9 +221,8 @@ void lines_demo() {
         draw::line(lcd,srect16(lcd_type::width-i*(lcd_type::width/100.0)-1,0,lcd_type::width-1,lcd_type::height-i*(lcd_type::height/100.0)-1),lcd_color::hot_pink);
         draw::line(lcd,srect16(0,lcd_type::height-i*(lcd_type::height/100.0),i*(lcd_type::width/100.0)-1,0),lcd_color::pale_green);
         draw::line(lcd,srect16(lcd_type::width-1,i*(lcd_type::height/100.0),lcd_type::width-i*(lcd_type::width/100.0)-1,lcd_type::height-1),lcd_color::yellow);
-        
+        vTaskDelay(1);
     }
-    //vTaskDelay(3000/portTICK_PERIOD_MS);
 }
 
 //Simple routine to generate some patterns and send them to the LCD. Don't expect anything too

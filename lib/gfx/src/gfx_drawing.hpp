@@ -902,11 +902,98 @@ namespace gfx {
                 return draw_filled_rect_helper<Destination,Destination::caps::async>::do_draw(destination,r,color,true);
             return draw_filled_rect_helper<Destination,false>::do_draw(destination,r,color,false);
         }
-        template<typename Destination,bool Batch>
+        template<typename Destination,bool Batch,bool Async>
         struct draw_font_batch_helper {
         };
         template<typename Destination>
-        struct draw_font_batch_helper<Destination,true> {
+        struct draw_font_batch_helper<Destination,true,false> {
+            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip,bool async) {
+                // transparent_background is ignored for this routine
+                srect16 sr = srect16(chr);
+                if(nullptr!=clip)
+                    sr=sr.crop(*clip);
+                if(!sr.intersects((srect16)destination.bounds()))
+                    return gfx_result::success;
+                rect16 dr = (rect16)sr.crop((srect16)destination.bounds());
+                
+                gfx_result r = destination.begin_batch(dr);
+                if(gfx_result::success!=r)
+                    return r;
+                // draw the character
+                size_t wb = (fc.width()+7)/8;
+                const uint8_t* p = fc.data();
+                for(size_t j=0;j<font.height();++j) {
+                    bits::int_max m = 1 << (fc.width()-1);
+                    bits::int_max accum=0;
+                    memcpy(&accum,p,wb);
+                    p+=wb;
+                    for(size_t n=0;n<=fc.width();++n) {
+                        if(dr.intersects(point16(n+chr.left(),j+chr.top()))) {
+                            if(accum&m) {
+                                r=destination.write_batch(color);
+                                if(gfx_result::success!=r)
+                                    return r;
+                            } else {
+                                r=destination.write_batch(backcolor);
+                                if(gfx_result::success!=r)
+                                    return r;
+                            }
+                        }
+                        accum<<=1;
+                    }
+                }
+                r=destination.commit_batch();
+                return r;
+            }
+        };
+        template<typename Destination>
+        struct draw_font_batch_helper<Destination,false,false> {
+            static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip,bool async) {
+                gfx_result r = gfx_result::success;
+                // draw the character
+                size_t wb = (fc.width()+7)/8;
+                const uint8_t* p = fc.data();
+                for(size_t j=0;j<font.height();++j) {
+                    bits::int_max m = 1 << (fc.width()-1);
+                    bits::int_max accum=0;
+                    memcpy(&accum,p,wb);
+                    p+=wb;
+                    int run_start_fg = -1;
+                    int run_start_bg = -1;
+                    for(size_t n=0;n<fc.width();++n) {
+                        if(accum&m) {
+                            if(!transparent_background&&-1!=run_start_bg) {
+                                r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),backcolor,clip);
+                                run_start_bg=-1;
+                            }
+                            if(-1==run_start_fg)
+                                run_start_fg=n;
+                        } else {
+                            if(-1!=run_start_fg) {
+                                r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,n-1+chr.left(),chr.top()+j),color,clip);
+                                run_start_fg=-1;
+                            }
+                            if(!transparent_background) {
+                                if(-1==run_start_bg)
+                                    run_start_bg=n;
+                            }
+                        }
+
+                        accum<<=1;
+                    }
+                    if(-1!=run_start_fg) {
+                        r=line(destination,srect16(run_start_fg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),color,clip);
+                    }
+                    if(!transparent_background&&-1!=run_start_bg) {
+                        r=line(destination,srect16(run_start_bg+chr.left(),chr.top()+j,fc.width()-1+chr.left(),chr.top()+j),backcolor,clip);
+                        
+                    }
+                }
+                return r;
+            }
+        };
+        template<typename Destination>
+        struct draw_font_batch_helper<Destination,true,true> {
             static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip,bool async) {
                 // transparent_background is ignored for this routine
                 srect16 sr = srect16(chr);
@@ -947,7 +1034,7 @@ namespace gfx {
             }
         };
         template<typename Destination>
-        struct draw_font_batch_helper<Destination,false> {
+        struct draw_font_batch_helper<Destination,false,true> {
             static gfx_result do_draw(Destination& destination,const font& font,const font_char& fc,const srect16& chr,typename Destination::pixel_type color,typename Destination::pixel_type backcolor,bool transparent_background,srect16* clip,bool async) {
                 gfx_result r = gfx_result::success;
                 // draw the character
@@ -1224,9 +1311,9 @@ namespace gfx {
                         if(nullptr==clip || clip->intersects(chr)) {
                             if(chr.intersects(dest_rect)) {
                                 if(transparent_background)
-                                    r=draw_font_batch_helper<Destination,false>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip,async);
+                                    r=draw_font_batch_helper<Destination,false,Destination::caps::async>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip,async);
                                 else
-                                    r=draw_font_batch_helper<Destination,Destination::caps::batch_write>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip,async);
+                                    r=draw_font_batch_helper<Destination,Destination::caps::batch_write,Destination::caps::async>::do_draw(destination,font,fc,chr,color,backcolor,transparent_background,clip,async);
                                 if(gfx_result::success!=r)
                                     return r;
                                 chr=chr.offset(fc.width(),0);

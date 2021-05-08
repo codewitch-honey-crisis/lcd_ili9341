@@ -448,7 +448,7 @@ namespace espidf {
         // fills the target rectangle of the frame buffer with a pixel
         result frame_fill(uint16_t x1,uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color) {
             if(x1==x2&&y1==y2)
-                return pixel_write_impl(x1,x2,color,false);
+               return pixel_write_impl(x1,x2,color,false);
             return frame_fill_impl(x1,y1,x2,y2,color,false);
         }
         // queues the fill of a target rectangle with the specified pixel
@@ -626,6 +626,7 @@ namespace espidf {
         }
         // fills the specified rectangle with the specified pixel
         gfx::gfx_result fill(const gfx::rect16& rect,pixel_type color) {
+            //printf("fill\r\n");
             result r=frame_fill(rect.x1,rect.y1,rect.x2,rect.y2,color.value());
             if(result::success!=r)
                 return xlt_err(r);

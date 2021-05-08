@@ -26,6 +26,7 @@ namespace gfx {
         constexpr inline type offset(bits::signedx<value_type> x, bits::signedx<value_type> y) const {
             return type(this->x+x,this->y+y);
         }
+        
         constexpr inline bool operator==(const type& rhs) const { 
             return x==rhs.x && y==rhs.y;   
         }
@@ -196,6 +197,15 @@ namespace gfx {
         // offsets the rectangle by the specified amounts.
         constexpr inline rectx<T> offset(typename bits::signedx<T> x,typename bits::signedx<T> y) const {
             return rectx<T>(x1+x,y1+y,x2+x,y2+y);
+        }
+        constexpr inline rectx<T> center_horizontal(const rectx<T>& bounds) const {
+            return offset((bounds.width()-width())/2,0);
+        }
+        constexpr inline rectx<T> center_vertical(const rectx<T>& bounds) const {
+            return offset(0,(bounds.height()-height())/2);
+        }
+        constexpr inline rectx<T> center(const rectx<T>& bounds) const {
+            return offset((bounds.width()-width())/2,(bounds.height()-height())/2);
         }
         // normalizes a rectangle, such that x1<=x2 and y1<=y2
         constexpr inline rectx<T> normalize() const {
