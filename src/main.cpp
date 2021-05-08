@@ -189,7 +189,7 @@ static void display_pretty_colors()
         lines_bmp_type(size16(320,PARALLEL_LINES),lines[0]),
         lines_bmp_type(size16(320,PARALLEL_LINES),lines[1])
     };
-
+    
     int frame=0;
     //Indexes of the line currently being sent to the LCD and the line we're calculating.
     int sending_line=-1;
